@@ -45,11 +45,27 @@ target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
 # Add sources to executable
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user sources here
+    App/app_main.c
+    App/console.c
+    App/fault.c
+    App/drivers/can_port.c
+    App/drivers/uart_port.c
+    # Bring-up tests, selected with BOARD_TEST_MODE in App/board_config.h
+    App/tests/bringup_test.c
+    App/tests/can_linktest.c
+    App/tests/can_loadtest.c
+    App/tests/can_selftest.c
+    App/tests/rs485_test.c
+    App/tests/test_line.c
+    App/tests/uart_test.c
 )
 
 # Add include paths
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user defined include paths
+    App
+    App/drivers
+    App/tests
 )
 
 # Add project symbols (macros)
