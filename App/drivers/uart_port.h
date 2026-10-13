@@ -22,6 +22,10 @@
 
 #include "FreeRTOS.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef enum
 {
   UART_PORT_UART5, /* Processed-data output port. */
@@ -81,5 +85,9 @@ size_t uart_port_read(uart_port_id_t port_id, uint8_t *data, size_t length, Tick
 bool uart_port_wait_tx_idle(uart_port_id_t port_id, TickType_t timeout);
 
 void uart_port_get_stats(uart_port_id_t port_id, uart_port_stats_t *stats);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* UART_PORT_H */

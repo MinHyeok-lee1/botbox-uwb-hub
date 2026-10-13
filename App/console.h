@@ -10,6 +10,10 @@
 
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /** Create the console objects and task. Call before the scheduler starts. */
 void console_init(void);
 
@@ -18,5 +22,9 @@ void console_printf(const char *format, ...) __attribute__((format(printf, 1, 2)
 
 /** Number of messages dropped or truncated because the queue was full. */
 uint32_t console_get_drop_count(void);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* CONSOLE_H */

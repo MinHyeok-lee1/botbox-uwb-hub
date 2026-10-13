@@ -15,6 +15,10 @@
 
 #include "FreeRTOS.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define CAN_FRAME_MAX_LENGTH 64U
 
 typedef enum
@@ -99,5 +103,9 @@ void can_port_get_stats(can_port_id_t port_id, can_port_stats_t *stats);
 
 /** Smallest amount of free stack the CAN TX task has ever had, in words. */
 uint32_t can_port_tx_task_stack_free(void);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* CAN_PORT_H */

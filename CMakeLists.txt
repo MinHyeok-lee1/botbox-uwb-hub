@@ -12,6 +12,11 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS ON)
 
+# The UWB follow algorithm (App/manager/uwb) is C++
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS ON)
+
 
 # Define the build type
 if(NOT CMAKE_BUILD_TYPE)
@@ -28,8 +33,8 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS TRUE)
 project(${CMAKE_PROJECT_NAME})
 message("Build type: " ${CMAKE_BUILD_TYPE})
 
-# Enable CMake support for ASM and C languages
-enable_language(C ASM)
+# Enable CMake support for ASM, C and C++ languages
+enable_language(C CXX ASM)
 
 # Create an executable object type
 add_executable(${CMAKE_PROJECT_NAME})
@@ -50,6 +55,11 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     App/fault.c
     App/drivers/can_port.c
     App/drivers/uart_port.c
+    # UWB follow algorithm from botbox+. uwb_manager.cpp and uwb_move_maker.cpp
+    # join the build once the configuration header exists.
+    App/manager/uwb/uwb_data_instance.cpp
+    App/manager/uwb/uwb_filter.c
+    App/manager/uwb/uwb_filter_anchor_stub.c
     # Bring-up tests, selected with BOARD_TEST_MODE in App/board_config.h
     App/tests/bringup_test.c
     App/tests/can_linktest.c
@@ -66,6 +76,7 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user defined include paths
     App
     App/drivers
+    App/manager/uwb
     App/tests
 )
 

@@ -5,6 +5,10 @@
 #ifndef FAULT_H
 #define FAULT_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef enum
 {
   FAULT_HARD_FAULT,
@@ -20,5 +24,9 @@ typedef enum
  * @param detail Optional extra text such as a task name, or NULL.
  */
 void fault_panic(fault_code_t code, const char *detail) __attribute__((noreturn));
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* FAULT_H */
