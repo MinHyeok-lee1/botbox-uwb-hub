@@ -54,6 +54,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     App/tests/bringup_test.c
     App/tests/can_linktest.c
     App/tests/can_loadtest.c
+    App/tests/can_monitor.c
     App/tests/can_selftest.c
     App/tests/rs485_test.c
     App/tests/test_line.c

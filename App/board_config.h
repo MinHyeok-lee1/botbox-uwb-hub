@@ -21,6 +21,7 @@
    CAN_LOOPBACK  CAN internal loopback self-test, no wiring needed
    CAN_LINK      1 frame/s exchange between two boards on the real CAN bus
    CAN_LOAD      one cycle of the two-board CAN load test
+   CAN_MONITOR   receive only on CAN1 and print the frames; transmits nothing
    UART          continuous output and line check on UART5
    RS485         request/reply exchange on the RS485 bus */
 #define BOARD_TEST_NONE 0
@@ -29,7 +30,8 @@
 #define BOARD_TEST_CAN_LOAD 3
 #define BOARD_TEST_UART 4
 #define BOARD_TEST_RS485 5
-#define BOARD_TEST_MODE BOARD_TEST_RS485
+#define BOARD_TEST_CAN_MONITOR 6
+#define BOARD_TEST_MODE BOARD_TEST_CAN_MONITOR
 
 /* CAN ports the application uses. The sample boards only have the CAN1
    transceiver fitted; set BOARD_CAN2_ENABLE to 1 on hardware that has both.

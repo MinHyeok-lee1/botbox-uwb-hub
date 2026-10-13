@@ -9,6 +9,7 @@
 #include "board_config.h"
 #include "can_linktest.h"
 #include "can_loadtest.h"
+#include "can_monitor.h"
 #include "can_selftest.h"
 #include "rs485_test.h"
 #include "uart_test.h"
@@ -38,5 +39,7 @@ void bringup_test_init(void)
   uart_test_init();
 #elif BOARD_TEST_MODE == BOARD_TEST_RS485
   rs485_test_init();
+#elif BOARD_TEST_MODE == BOARD_TEST_CAN_MONITOR
+  can_monitor_init();
 #endif
 }
