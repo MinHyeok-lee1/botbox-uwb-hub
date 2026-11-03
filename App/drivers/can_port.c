@@ -352,6 +352,15 @@ bool can_port_send(can_port_id_t port_id, const can_frame_t *frame, TickType_t t
   return true;
 }
 
+uint32_t can_port_tx_pending(can_port_id_t port_id)
+{
+  if ((port_id >= CAN_PORT_COUNT) || (ports[port_id].tx_queue == NULL))
+  {
+    return 0U;
+  }
+  return (uint32_t)uxQueueMessagesWaiting(ports[port_id].tx_queue);
+}
+
 bool can_port_receive(can_port_id_t port_id, can_frame_t *frame, TickType_t timeout)
 {
   if ((port_id >= CAN_PORT_COUNT) || (frame == NULL))
@@ -430,6 +439,7 @@ void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo0ITs)
     }
 
     frame.id = header.Identifier;
+    frame.rx_tick = xTaskGetTickCountFromISR();
     frame.length = DLC_TO_LENGTH[header.DataLength & (CAN_PORT_DLC_COUNT - 1U)];
     frame.extended = (header.IdType == FDCAN_EXTENDED_ID);
     frame.fd = (header.FDFormat == FDCAN_FD_CAN);

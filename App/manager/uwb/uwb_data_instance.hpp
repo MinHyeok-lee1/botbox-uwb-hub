@@ -27,6 +27,11 @@ constexpr uint8_t UWB_PACKET_SIZE = sizeof(UwbPacket);
 constexpr uint8_t UWB_PACKET_START_VALUE = 0xAA;
 // 기존 코드에서 int8_t였으나 distance가 int16_t이므로 수정하여 캐스팅 이슈 방지
 static constexpr int16_t UWB_INVALID_VALUE = -1;
+// Longest distance accepted as a measurement. It is the distance filter's
+// limit: the filter ignores anything longer, so a longer distance would reach
+// the algorithm as a stale or zero estimate.
+static constexpr int16_t UWB_MAX_DISTANCE_MM =
+    static_cast<int16_t>(UWB_DISTANCE_LPF_MAX_MM);
 
 static constexpr uint16_t UWB_CAN_BASE_ADDRESS = 0x0200;
 static constexpr uint8_t UWB_CAN_LEFT_NODE = 0x01;
@@ -39,6 +44,7 @@ constexpr uint8_t UWB_CAN_MAX_DATA_SIZE = 8;
 
 struct CANRxMessage {
   uint32_t nodeID; // CAN identifier, e.g. 0x201 for the left sensor
+  uint32_t rxTick; // RTOS tick at which the frame arrived (taken in the ISR)
   uint8_t data[UWB_CAN_MAX_DATA_SIZE];
 };
 
@@ -64,7 +70,7 @@ public:
   bool is_packet_broken() const { return _packetBroken; }
   bool is_distance_invalid() const { return _distanceInvalid; }
   bool is_timed_out(uint32_t ms) const {
-    if (_lastRxTick == 0) {
+    if (!_hasReceived) {
       return true;
     }
     return (xTaskGetTickCount() - _lastRxTick) > pdMS_TO_TICKS(ms);

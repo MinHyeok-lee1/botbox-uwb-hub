@@ -28,7 +28,9 @@ void UwbDataInstance::on_receive(CANRxMessage *message) {
   if (message == nullptr)
     return;
 
-  _lastRxTick = xTaskGetTickCount();
+  // botbox+ took the tick here, when the task read the queue. The hub uses
+  // the arrival tick so the three sensors can be compared in time.
+  _lastRxTick = message->rxTick;
   _hasReceived = true;
 
   UwbPacket packet;
@@ -41,10 +43,11 @@ void UwbDataInstance::on_receive(CANRxMessage *message) {
   const bool checksumOk =
       xor_checksum(packet.byteStream, UWB_PACKET_SIZE - 1) == packet.checksum;
   _packetBroken = !startOk || !checksumOk;
-  // -1 is the protocol's explicit tag-loss value. Any smaller value is not a
-  // physical distance and is reported separately from framing/checksum errors.
-  _distanceInvalid =
-      !_packetBroken && packet.distance < UWB_INVALID_VALUE;
+  // -1 is the protocol's explicit tag-loss value. Any smaller value, or one
+  // past UWB_MAX_DISTANCE_MM, is not a usable distance and is reported
+  // separately from framing/checksum errors.
+  _distanceInvalid = !_packetBroken && (packet.distance < UWB_INVALID_VALUE ||
+                                        packet.distance > UWB_MAX_DISTANCE_MM);
   _tagLost = !_packetBroken && !_distanceInvalid &&
              (packet.distance == UWB_INVALID_VALUE);
   _valid = !_packetBroken && !_distanceInvalid && !_tagLost;

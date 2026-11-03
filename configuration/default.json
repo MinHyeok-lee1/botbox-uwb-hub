@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "uwb_follow": {
+    "receive_timeout_ms": 10000,
+    "distance_filter_enabled": false,
+    "mode_decision_buffer_size": 7,
+    "mode_decision_majority_count": 4,
+    "mode_observation_timeout_ms": 1500,
+    "front_sensor_spacing_mm": 400,
+    "front_rear_sensor_spacing_mm": 1200,
+    "center_in_threshold_lr_mm": 100,
+    "center_out_threshold_lr_mm": 150,
+    "center_back_in_threshold_lr_mm": 100,
+    "center_back_out_threshold_lr_mm": 150,
+    "stop_threshold_fb_mm": 450,
+    "mid_threshold_fb_mm": 280,
+    "turn_ratio_smoothing_alpha": 0.35,
+    "turn_angle_deadzone_deg": 5.0,
+    "turn_angle_full_scale_deg": 60.0,
+    "turn_angle_smoothing_alpha": 0.4,
+    "turn_angle_max_step_deg": 15.0,
+    "direction_change_turn_hold_ms": 250,
+    "max_sensor_sample_skew_ms": 300,
+    "direction_flip_confirm_count": 3,
+    "min_turn_ratio_forward_percent": 15,
+    "min_turn_ratio_backward_percent": 45,
+    "close_back_turn_limit_distance_mm": 2000,
+    "close_back_min_turn_ratio_percent": 60,
+    "initial_turn_ratio_percent": 100.0,
+    "back_uwb_enabled": true,
+    "vector_smoothing_alpha": 0.4
+  },
+  "can_output": {
+    "frame_format": 0
+  }
+}

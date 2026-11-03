@@ -9,8 +9,6 @@
 static constexpr uint8_t UWB_MODE_DECISION_BUFFER_CAPACITY =
     static_cast<uint8_t>(
         botbox::config::UWB_MODE_DECISION_BUFFER_CAPACITY);
-static constexpr uint8_t UWB_MOVE_BUFFER_CAPACITY =
-    static_cast<uint8_t>(botbox::config::UWB_MOVE_BUFFER_CAPACITY);
 static constexpr uint8_t UWB_FOLLOW_MODE_COUNT = 7U;
 
 inline const botbox::config::UwbFollowConfiguration &

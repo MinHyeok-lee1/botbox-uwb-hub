@@ -1,13 +1,14 @@
 #include "uwb_manager.hpp"
-#include "diagnostic_manager.hpp"
 
 #include <algorithm>
 #include <cmath>
 
-#include "gpio_input_manager.hpp"
-#include "log_manager.hpp"
+#include "console.h"
 
 namespace {
+
+// Turn ratio reported when the distances give no steering information.
+constexpr uint32_t NEUTRAL_TURN_RATIO_PERCENT = 50U;
 
 uint32_t tick_distance(uint32_t left, uint32_t right) {
   return std::min(left - right, right - left);
@@ -34,16 +35,16 @@ UwbManager::UwbManager()
       _modeDecisionBuffer{},
       _modeDecisionBufferIndex(0),
       _modeDecisionBufferCount(0),
-      _hasReliableMotionHistory(false),
-      _lastReliableFollowMode(UwbFollowMode::DEFAULT),
-      _lastReliableDirection(UwbDirection::UNKNOWN),
-      _lastReliableTurn(UwbTurn::UNKNOWN),
-      _lastReliableBackTurn(UwbTurn::UNKNOWN),
-      _lastReliableTurnRatio(50), _lastReliableMotionTick(0),
       _direction(UwbDirection::UNKNOWN), _turn(UwbTurn::UNKNOWN),
-      _backTurn(UwbTurn::UNKNOWN), _turnRatio(50),
-      _isTurnAngleSampleSynchronized(false), _move(UwbMove::STOP),
-      _stopReason(UwbStopReason::NOT_FOLLOWING) {}
+      _backTurn(UwbTurn::UNKNOWN), _turnRatio(NEUTRAL_TURN_RATIO_PERCENT),
+      _isTurnAngleSampleSynchronized(false), _isSteeringCurrent(false),
+      _rangeRule(UwbRangeRule::NONE), _rangeFront(UWB_INVALID_VALUE),
+      _rangeBack(UWB_INVALID_VALUE), _rangeLeft(UWB_INVALID_VALUE),
+      _rangeRight(UWB_INVALID_VALUE),
+      _stopReason(UwbStopReason::NOT_FOLLOWING),
+      _vector{UwbVectorQuality::NONE, UWB_INVALID_VALUE,
+              UWB_VECTOR_BEARING_NONE},
+      _sampleAgeMs(UWB_SAMPLE_AGE_UNKNOWN_MS) {}
 
 // The hub's can_port driver owns the CAN bus, so there is nothing to set up or
 // start here. Both functions are kept for the callers.
@@ -63,16 +64,79 @@ void UwbManager::pause() {
   _lastAliveDistanceBack = UWB_INVALID_VALUE;
   _calculatedDistanceFront = UWB_INVALID_VALUE;
   stop_following();
-
-  DIAG().clear_error(SystemError::UWB_LEFT_TIMEOUT_FAULT);
-  DIAG().clear_error(SystemError::UWB_RIGHT_TIMEOUT_FAULT);
-  DIAG().clear_error(SystemError::UWB_BACK_TIMEOUT_FAULT);
-  DIAG().clear_error(SystemError::UWB_LEFT_SENSOR_FAULT);
-  DIAG().clear_error(SystemError::UWB_RIGHT_SENSOR_FAULT);
-  DIAG().clear_error(SystemError::UWB_BACK_SENSOR_FAULT);
 }
 
 void UwbManager::update() {
+  update_follow_state();
+  update_output_estimates();
+}
+
+// Values that only the CAN2 output uses; the follow decision does not depend
+// on them.
+void UwbManager::update_output_estimates() {
+  _sampleAgeMs = current_sample_age_ms();
+
+  UwbVectorQuality requested = UwbVectorQuality::NONE;
+  if (_isFollowingAvailable && _isSteeringCurrent) {
+    if (_followMode == UwbFollowMode::DEFAULT &&
+        are_three_sensor_samples_synchronized()) {
+      requested = UwbVectorQuality::THREE_SENSOR;
+    } else if (_followMode == UwbFollowMode::FRONT_ONLY &&
+               are_front_samples_synchronized()) {
+      requested = UwbVectorQuality::FRONT_ASSUMED;
+    }
+  }
+  _vector = _vectorEstimator.update(requested, _distanceLeft, _distanceRight,
+                                    _distanceBack);
+}
+
+uint32_t UwbManager::current_sample_age_ms() const {
+  if (!_isFollowingAvailable) {
+    return UWB_SAMPLE_AGE_UNKNOWN_MS;
+  }
+
+  bool usesLeft = false;
+  bool usesRight = false;
+  bool usesBack = false;
+  switch (_followMode) {
+  case UwbFollowMode::DEFAULT:
+    usesLeft = usesRight = usesBack = true;
+    break;
+  case UwbFollowMode::FRONT_ONLY:
+    usesLeft = usesRight = true;
+    break;
+  case UwbFollowMode::BACK_ONLY:
+    usesBack = true;
+    break;
+  case UwbFollowMode::LEFT_BACK:
+    usesLeft = usesBack = true;
+    break;
+  case UwbFollowMode::RIGHT_BACK:
+    usesRight = usesBack = true;
+    break;
+  case UwbFollowMode::LEFT_ONLY:
+    usesLeft = true;
+    break;
+  case UwbFollowMode::RIGHT_ONLY:
+    usesRight = true;
+    break;
+  }
+
+  const TickType_t now = xTaskGetTickCount();
+  TickType_t oldest = 0U;
+  if (usesLeft) {
+    oldest = std::max<TickType_t>(oldest, now - _leftUwb.last_rx_tick());
+  }
+  if (usesRight) {
+    oldest = std::max<TickType_t>(oldest, now - _rightUwb.last_rx_tick());
+  }
+  if (usesBack) {
+    oldest = std::max<TickType_t>(oldest, now - _backUwb.last_rx_tick());
+  }
+  return static_cast<uint32_t>(oldest) * portTICK_PERIOD_MS;
+}
+
+void UwbManager::update_follow_state() {
   const auto &configuration = uwb_follow_configuration();
   const bool isBackUwbEnabled = configuration.back_uwb_enabled != 0U;
   // AUTO start and sensor recovery have no active mode to preserve, so their
@@ -117,20 +181,6 @@ void UwbManager::update() {
   update_last_alive_distances(isLeftSignalLost, isRightSignalLost,
                               isBackSignalLost);
 
-  isLeftTimedOut  ? DIAG().set_error(SystemError::UWB_LEFT_TIMEOUT_FAULT)
-                  : DIAG().clear_error(SystemError::UWB_LEFT_TIMEOUT_FAULT);
-  isRightTimedOut ? DIAG().set_error(SystemError::UWB_RIGHT_TIMEOUT_FAULT)
-                  : DIAG().clear_error(SystemError::UWB_RIGHT_TIMEOUT_FAULT);
-  isBackTimedOut  ? DIAG().set_error(SystemError::UWB_BACK_TIMEOUT_FAULT)
-                  : DIAG().clear_error(SystemError::UWB_BACK_TIMEOUT_FAULT);
-
-  isLeftSignalLost  ? DIAG().set_error(SystemError::UWB_LEFT_SENSOR_FAULT)
-                    : DIAG().clear_error(SystemError::UWB_LEFT_SENSOR_FAULT);
-  isRightSignalLost ? DIAG().set_error(SystemError::UWB_RIGHT_SENSOR_FAULT)
-                    : DIAG().clear_error(SystemError::UWB_RIGHT_SENSOR_FAULT);
-  isBackSignalLost  ? DIAG().set_error(SystemError::UWB_BACK_SENSOR_FAULT)
-                    : DIAG().clear_error(SystemError::UWB_BACK_SENSOR_FAULT);
-
   if (hasAnySensorTimeout) {
     _stopReason = UwbStopReason::SENSOR_TIMEOUT;
     stop_following();
@@ -139,6 +189,11 @@ void UwbManager::update() {
 
   _isFollowingAvailable = true;
   _isTurnAngleSampleSynchronized = false;
+  // Set again by the mode handler that runs below. It stays false in a cycle
+  // where the current mode lost its sensors and the next mode is not decided
+  // yet, so the receiver can tell that the steering values are old.
+  _isSteeringCurrent = false;
+  _stopReason = UwbStopReason::NONE;
 
   if (!isBackUwbEnabled) {
     if (isLeftSignalLost || isRightSignalLost) {
@@ -157,6 +212,21 @@ void UwbManager::update() {
       decide_mode(isLeftSignalLost, isRightSignalLost, isBackSignalLost,
                   hasCurrentFollowMode);
 
+  apply_mode_decision(modeDecision, isLeftSignalLost, isRightSignalLost,
+                      isBackSignalLost);
+
+  // The 3-sensor direction is only calculated by apply_default_mode(), which
+  // leaves the mode at DEFAULT with current steering. In any other cycle an
+  // unconfirmed direction flip is dropped.
+  if (_followMode != UwbFollowMode::DEFAULT || !_isSteeringCurrent) {
+    _maker.cancel_direction_flip();
+  }
+}
+
+void UwbManager::apply_mode_decision(UwbModeDecision modeDecision,
+                                     bool isLeftSignalLost,
+                                     bool isRightSignalLost,
+                                     bool isBackSignalLost) {
   switch (modeDecision) {
   case UwbModeDecision::FRONT_ONLY:
     update_front_distance();
@@ -211,19 +281,14 @@ void UwbManager::stop_following() {
   _isFollowingAvailable = false;
   _followMode           = UwbFollowMode::DEFAULT;
   reset_mode_transition();
-  _hasReliableMotionHistory = false;
-  _lastReliableFollowMode   = UwbFollowMode::DEFAULT;
-  _lastReliableDirection    = UwbDirection::UNKNOWN;
-  _lastReliableTurn         = UwbTurn::UNKNOWN;
-  _lastReliableBackTurn     = UwbTurn::UNKNOWN;
-  _lastReliableTurnRatio    = 50;
-  _lastReliableMotionTick   = 0;
   _direction = UwbDirection::UNKNOWN;
   _turn      = UwbTurn::UNKNOWN;
   _backTurn  = UwbTurn::UNKNOWN;
-  _turnRatio = 50;
+  _turnRatio = NEUTRAL_TURN_RATIO_PERCENT;
   _isTurnAngleSampleSynchronized = false;
-  _move      = UwbMove::STOP;
+  _isSteeringCurrent = false;
+  set_ranges(UwbRangeRule::NONE, UWB_INVALID_VALUE, UWB_INVALID_VALUE,
+             UWB_INVALID_VALUE, UWB_INVALID_VALUE);
   _maker.reset();
 }
 
@@ -295,7 +360,7 @@ UwbModeDecision UwbManager::decide_mode(bool isLeftSignalLost,
                                     : UwbModeDecision::STOP);
   }
 
-  WRITE_LOG("3 SENSOR LOSS STOP\r\n");
+  console_printf("3 SENSOR LOSS STOP\r\n");
 
   return UwbModeDecision::STOP;
 }
@@ -398,13 +463,13 @@ UwbManager::apply_mode_transition(UwbModeDecision requestedMode,
   if ((nowTick - _modeTransitionStartTick) >=
       pdMS_TO_TICKS(configuration.mode_observation_timeout_ms)) {
     if (isCurrentModeAvailable) {
-      WRITE_LOG("UWB MODE TRANSITION TIMEOUT KEEP CURRENT %u\r\n",
+      console_printf("UWB MODE TRANSITION TIMEOUT KEEP CURRENT %u\r\n",
                 static_cast<unsigned int>(_followMode));
       reset_mode_transition();
       return UwbModeDecision::KEEP_CURRENT_MODE;
     }
 
-    WRITE_LOG("UWB MODE TRANSITION TIMEOUT USE LATEST %u\r\n",
+    console_printf("UWB MODE TRANSITION TIMEOUT USE LATEST %u\r\n",
               static_cast<unsigned int>(requestedMode));
     reset_mode_transition();
     return requestedMode;
@@ -491,6 +556,25 @@ bool UwbManager::are_three_sensor_samples_synchronized() const {
          tick_distance(rightTick, backTick) <= maxSkewTicks;
 }
 
+bool UwbManager::are_front_samples_synchronized() const {
+  if (!_leftUwb.has_received() || !_rightUwb.has_received()) {
+    return false;
+  }
+  const uint32_t maxSkewTicks = static_cast<uint32_t>(
+      pdMS_TO_TICKS(uwb_follow_configuration().max_sensor_sample_skew_ms));
+  return tick_distance(_leftUwb.last_rx_tick(), _rightUwb.last_rx_tick()) <=
+         maxSkewTicks;
+}
+
+void UwbManager::set_ranges(UwbRangeRule rule, int16_t front, int16_t back,
+                            int16_t left, int16_t right) {
+  _rangeRule  = rule;
+  _rangeFront = front;
+  _rangeBack  = back;
+  _rangeLeft  = left;
+  _rangeRight = right;
+}
+
 void UwbManager::apply_front_only_mode() {
   _followMode = UwbFollowMode::FRONT_ONLY;
   _direction  = UwbDirection::FORWARD;
@@ -498,14 +582,9 @@ void UwbManager::apply_front_only_mode() {
   _backTurn   = UwbTurn::UNKNOWN;
   _turnRatio  = _maker.calculate_turn_ratio(_distanceLeft, _distanceRight,
                                             _direction);
-  _move       = _maker.calculate_front_only_move(_calculatedDistanceFront,
-                                                 _distanceLeft,
-                                                 _distanceRight);
-  update_stop_reason_from_move();
-  if (keep_recent_motion_if_opposite()) {
-    return;
-  }
-  remember_reliable_motion();
+  set_ranges(UwbRangeRule::FRONT_ONLY, _calculatedDistanceFront,
+             UWB_INVALID_VALUE, _distanceLeft, _distanceRight);
+  _isSteeringCurrent = true;
 }
 
 void UwbManager::apply_default_mode() {
@@ -522,14 +601,9 @@ void UwbManager::apply_default_mode() {
       _distanceLeft, _distanceRight, _calculatedDistanceFront, _distanceBack,
       _direction, _isTurnAngleSampleSynchronized);
   apply_close_back_turn_limit();
-  _move      = _maker.calculate_move(_direction, _calculatedDistanceFront,
-                                     _distanceBack, _distanceLeft,
-                                     _distanceRight);
-  update_stop_reason_from_move();
-  if (keep_recent_motion_if_opposite()) {
-    return;
-  }
-  remember_reliable_motion();
+  set_ranges(UwbRangeRule::THREE_SENSOR, _calculatedDistanceFront,
+             _distanceBack, _distanceLeft, _distanceRight);
+  _isSteeringCurrent = true;
 }
 
 void UwbManager::apply_back_only_mode() {
@@ -537,21 +611,18 @@ void UwbManager::apply_back_only_mode() {
   _direction  = UwbDirection::BACKWARD;
   _turn       = UwbTurn::UNKNOWN;
   _backTurn   = UwbTurn::CENTER;
-  _turnRatio  = 50;
+  _turnRatio  = NEUTRAL_TURN_RATIO_PERCENT;
   const int16_t backDistanceForMove =
       (_distanceBack == UWB_INVALID_VALUE) ? _lastAliveDistanceBack
                                            : _distanceBack;
-  _move       = _maker.calculate_back_only_move(backDistanceForMove);
-  update_stop_reason_from_move();
-  if (keep_recent_motion_if_opposite()) {
-    return;
-  }
-  remember_reliable_motion();
+  set_ranges(UwbRangeRule::BACK_ONLY, UWB_INVALID_VALUE, backDistanceForMove,
+             UWB_INVALID_VALUE, UWB_INVALID_VALUE);
+  _isSteeringCurrent = true;
 }
 
 void UwbManager::apply_left_back_mode() {
   _followMode = UwbFollowMode::LEFT_BACK;
-  _turnRatio  = 50;
+  _turnRatio  = NEUTRAL_TURN_RATIO_PERCENT;
 
   if (_distanceLeft >= _distanceBack) {
     // The back sensor is closer to the tag: turn backward-left.
@@ -559,29 +630,22 @@ void UwbManager::apply_left_back_mode() {
     _turn      = UwbTurn::UNKNOWN;
     _backTurn  = UwbTurn::RIGHT;
     apply_close_back_turn_limit();
-    _move      = _maker.calculate_back_only_move(_distanceBack);
-    update_stop_reason_from_move();
-    if (keep_recent_motion_if_opposite()) {
-      return;
-    }
-    remember_reliable_motion();
-  } else if (_distanceBack > _distanceLeft) {
+    set_ranges(UwbRangeRule::BACK_ONLY, UWB_INVALID_VALUE, _distanceBack,
+               UWB_INVALID_VALUE, UWB_INVALID_VALUE);
+  } else {
     // The left sensor is closer to the tag: turn left in place.
     _direction = UwbDirection::MID;
     _turn      = UwbTurn::LEFT;
     _backTurn  = UwbTurn::UNKNOWN;
-    _move      = _maker.calculate_move(_direction, _distanceLeft, _distanceBack);
-    update_stop_reason_from_move();
-    if (keep_recent_motion_if_opposite()) {
-      return;
-    }
-    remember_reliable_motion();
+    set_ranges(UwbRangeRule::THREE_SENSOR, _distanceLeft, _distanceBack,
+               _distanceLeft, _distanceLeft);
   }
+  _isSteeringCurrent = true;
 }
 
 void UwbManager::apply_right_back_mode() {
   _followMode = UwbFollowMode::RIGHT_BACK;
-  _turnRatio  = 50;
+  _turnRatio  = NEUTRAL_TURN_RATIO_PERCENT;
 
   if (_distanceRight >= _distanceBack) {
     // The back sensor is closer to the tag: turn backward-right.
@@ -589,74 +653,43 @@ void UwbManager::apply_right_back_mode() {
     _turn      = UwbTurn::UNKNOWN;
     _backTurn  = UwbTurn::LEFT;
     apply_close_back_turn_limit();
-    _move      = _maker.calculate_back_only_move(_distanceBack);
-    update_stop_reason_from_move();
-    if (keep_recent_motion_if_opposite()) {
-      return;
-    }
-    remember_reliable_motion();
-  } else if (_distanceBack > _distanceRight) {
+    set_ranges(UwbRangeRule::BACK_ONLY, UWB_INVALID_VALUE, _distanceBack,
+               UWB_INVALID_VALUE, UWB_INVALID_VALUE);
+  } else {
     // The right sensor is closer to the tag: turn right in place.
     _direction = UwbDirection::MID;
     _turn      = UwbTurn::RIGHT;
     _backTurn  = UwbTurn::UNKNOWN;
-    _move      = _maker.calculate_move(_direction, _distanceRight, _distanceBack);
-    update_stop_reason_from_move();
-    if (keep_recent_motion_if_opposite()) {
-      return;
-    }
-    remember_reliable_motion();
+    set_ranges(UwbRangeRule::THREE_SENSOR, _distanceRight, _distanceBack,
+               _distanceRight, _distanceRight);
   }
+  _isSteeringCurrent = true;
 }
 
+// One front sensor alone cannot tell where the tag is. botbox+ chose the
+// direction from its record of recent motion; the hub has no such record, so
+// it reports the mode and the distance and leaves the direction to the drive
+// board.
 void UwbManager::apply_left_only_mode() {
   _followMode = UwbFollowMode::LEFT_ONLY;
-  _turnRatio  = _lastReliableTurnRatio;
-
-  if (!is_left_only_escape_plausible()) {
-    keep_recent_motion();
-    return;
-  }
-
-  if (_lastReliableDirection == UwbDirection::BACKWARD &&
-      _lastReliableBackTurn == UwbTurn::RIGHT) {
-    _direction = UwbDirection::BACKWARD;
-    _turn      = UwbTurn::UNKNOWN;
-    _backTurn  = UwbTurn::RIGHT;
-  } else {
-    _direction = UwbDirection::MID;
-    _turn      = UwbTurn::LEFT;
-    _backTurn  = UwbTurn::UNKNOWN;
-  }
-
-  _move = _maker.calculate_front_only_move(_distanceLeft);
-  update_stop_reason_from_move();
-  keep_recent_motion_if_opposite();
+  _direction  = UwbDirection::UNKNOWN;
+  _turn       = UwbTurn::UNKNOWN;
+  _backTurn   = UwbTurn::UNKNOWN;
+  _turnRatio  = NEUTRAL_TURN_RATIO_PERCENT;
+  set_ranges(UwbRangeRule::FRONT_ONLY, _distanceLeft, UWB_INVALID_VALUE,
+             _distanceLeft, _distanceLeft);
+  _isSteeringCurrent = true;
 }
 
 void UwbManager::apply_right_only_mode() {
   _followMode = UwbFollowMode::RIGHT_ONLY;
-  _turnRatio  = _lastReliableTurnRatio;
-
-  if (!is_right_only_escape_plausible()) {
-    keep_recent_motion();
-    return;
-  }
-
-  if (_lastReliableDirection == UwbDirection::BACKWARD &&
-      _lastReliableBackTurn == UwbTurn::LEFT) {
-    _direction = UwbDirection::BACKWARD;
-    _turn      = UwbTurn::UNKNOWN;
-    _backTurn  = UwbTurn::LEFT;
-  } else {
-    _direction = UwbDirection::MID;
-    _turn      = UwbTurn::RIGHT;
-    _backTurn  = UwbTurn::UNKNOWN;
-  }
-
-  _move = _maker.calculate_front_only_move(_distanceRight);
-  update_stop_reason_from_move();
-  keep_recent_motion_if_opposite();
+  _direction  = UwbDirection::UNKNOWN;
+  _turn       = UwbTurn::UNKNOWN;
+  _backTurn   = UwbTurn::UNKNOWN;
+  _turnRatio  = NEUTRAL_TURN_RATIO_PERCENT;
+  set_ranges(UwbRangeRule::FRONT_ONLY, _distanceRight, UWB_INVALID_VALUE,
+             _distanceRight, _distanceRight);
+  _isSteeringCurrent = true;
 }
 
 void UwbManager::apply_current_follow_mode() {
@@ -707,143 +740,11 @@ void UwbManager::apply_close_back_turn_limit() {
       configuration.close_back_min_turn_ratio_percent);
 }
 
-void UwbManager::remember_reliable_motion() {
-  if (_move != UwbMove::MOVE) {
-    return;
-  }
-
-  _hasReliableMotionHistory = true;
-  _lastReliableFollowMode   = _followMode;
-  _lastReliableDirection    = _direction;
-  _lastReliableTurn         = _turn;
-  _lastReliableBackTurn     = _backTurn;
-  _lastReliableTurnRatio    = _turnRatio;
-  _lastReliableMotionTick   = xTaskGetTickCount();
-}
-
-bool UwbManager::keep_recent_motion() {
-  if (!has_recent_reliable_motion()) {
-    return false;
-  }
-
-  _followMode = _lastReliableFollowMode;
-  _direction  = _lastReliableDirection;
-  _turn       = _lastReliableTurn;
-  _backTurn   = _lastReliableBackTurn;
-  _turnRatio  = _lastReliableTurnRatio;
-  _move       = UwbMove::MOVE;
-  _stopReason = UwbStopReason::NONE;
-  return true;
-}
-
-bool UwbManager::has_recent_reliable_motion() const {
-  if (!_hasReliableMotionHistory) {
-    return false;
-  }
-
-  if ((xTaskGetTickCount() - _lastReliableMotionTick) >
-      pdMS_TO_TICKS(
-          uwb_follow_configuration().single_only_history_timeout_ms)) {
-    return false;
-  }
-
-  return true;
-}
-
-bool UwbManager::is_opposite_to_recent_motion(UwbDirection direction) const {
-  if (!has_recent_reliable_motion()) {
-    return false;
-  }
-
-  return (_lastReliableDirection == UwbDirection::FORWARD &&
-          direction == UwbDirection::BACKWARD) ||
-         (_lastReliableDirection == UwbDirection::BACKWARD &&
-          direction == UwbDirection::FORWARD);
-}
-
-bool UwbManager::keep_recent_motion_if_opposite() {
-  if (_move != UwbMove::MOVE || !is_opposite_to_recent_motion(_direction)) {
-    return false;
-  }
-
-  return keep_recent_motion();
-}
-
-bool UwbManager::is_left_only_escape_plausible() const {
-  if (!_hasReliableMotionHistory) {
-    return false;
-  }
-
-  if ((xTaskGetTickCount() - _lastReliableMotionTick) >
-      pdMS_TO_TICKS(
-          uwb_follow_configuration().single_only_history_timeout_ms)) {
-    return false;
-  }
-
-  if (_lastReliableFollowMode == UwbFollowMode::LEFT_BACK) {
-    return true;
-  }
-
-  if (_lastReliableDirection == UwbDirection::MID) {
-    return _lastReliableTurn == UwbTurn::LEFT;
-  }
-
-  if (_lastReliableDirection == UwbDirection::FORWARD) {
-    return _lastReliableTurn == UwbTurn::LEFT ||
-           _lastReliableTurn == UwbTurn::CENTER;
-  }
-
-  if (_lastReliableDirection == UwbDirection::BACKWARD) {
-    // OutputManager maps backTurn RIGHT to physical backward-left.
-    return _lastReliableBackTurn == UwbTurn::RIGHT;
-  }
-
-  return false;
-}
-
-bool UwbManager::is_right_only_escape_plausible() const {
-  if (!_hasReliableMotionHistory) {
-    return false;
-  }
-
-  if ((xTaskGetTickCount() - _lastReliableMotionTick) >
-      pdMS_TO_TICKS(
-          uwb_follow_configuration().single_only_history_timeout_ms)) {
-    return false;
-  }
-
-  if (_lastReliableFollowMode == UwbFollowMode::RIGHT_BACK) {
-    return true;
-  }
-
-  if (_lastReliableDirection == UwbDirection::MID) {
-    return _lastReliableTurn == UwbTurn::RIGHT;
-  }
-
-  if (_lastReliableDirection == UwbDirection::FORWARD) {
-    return _lastReliableTurn == UwbTurn::RIGHT ||
-           _lastReliableTurn == UwbTurn::CENTER;
-  }
-
-  if (_lastReliableDirection == UwbDirection::BACKWARD) {
-    // OutputManager maps backTurn LEFT to physical backward-right.
-    return _lastReliableBackTurn == UwbTurn::LEFT;
-  }
-
-  return false;
-}
-
-void UwbManager::update_stop_reason_from_move() {
-  _stopReason = (_move == UwbMove::STOP)
-                    ? UwbStopReason::DISTANCE_LIMIT_OR_BUFFER
-                    : UwbStopReason::NONE;
-}
-
 uint8_t uwbAddr = 0x0;
 void UwbManager::on_receive(CANRxMessage *message) {
   if (message == nullptr) return;
 
-  uwbAddr = (message->nodeID & 0x0F);
+  const uint8_t uwbAddr = (message->nodeID & 0x0F);
   if (uwbAddr == UWB_CAN_LEFT_NODE) {
     _leftUwb.on_receive(message);
   } else if (uwbAddr == UWB_CAN_RIGHT_NODE) {
@@ -862,7 +763,7 @@ void UwbManager::restart() {
   _lastAliveDistanceBack = UWB_INVALID_VALUE;
 }
 
-const bool UwbManager::is_timeout() {
+bool UwbManager::is_timeout() {
   const auto &configuration = uwb_follow_configuration();
   const uint32_t timeout = configuration.receive_timeout_ms;
   bool isTimeout = _leftUwb.is_timed_out(timeout) ||

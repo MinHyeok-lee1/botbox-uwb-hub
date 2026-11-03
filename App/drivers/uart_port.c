@@ -82,6 +82,13 @@ static uart_port_t *find_port(const UART_HandleTypeDef *huart)
 /* @return false if the receiver was already running or could not be started. */
 static bool start_reception(uart_port_t *port)
 {
+  /* A DMA error on either channel makes the HAL end the receive state, but
+     after a transmit DMA error the receive DMA channel is still running and
+     the HAL would refuse to start it again. Stop it first; this does nothing
+     when the channel is already stopped. */
+  ATOMIC_CLEAR_BIT(port->huart->Instance->CR3, USART_CR3_DMAR);
+  (void)HAL_DMA_Abort(port->huart->hdmarx);
+
   if (HAL_UARTEx_ReceiveToIdle_DMA(port->huart, port->rx_dma_buffer, UART_PORT_RX_DMA_SIZE) !=
       HAL_OK)
   {

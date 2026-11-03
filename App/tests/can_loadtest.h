@@ -1,6 +1,6 @@
 /**
  * @file can_loadtest.h
- * @brief Load test for CAN1 on a real bus between two boards.
+ * @brief Load test of one CAN port on a real bus between two boards.
  */
 #ifndef CAN_LOADTEST_H
 #define CAN_LOADTEST_H

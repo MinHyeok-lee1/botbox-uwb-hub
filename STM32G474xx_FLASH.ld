@@ -56,8 +56,18 @@ ENTRY(Reset_Handler)
 MEMORY
 {
 RAM (xrw)      : ORIGIN = 0x20000000, LENGTH = 128K
-FLASH (rx)      : ORIGIN = 0x8000000, LENGTH = 512K
+/* The last 4K of the 512K flash is kept for the configuration image. It is one
+   page in single-bank mode and two pages in dual-bank mode. */
+FLASH (rx)      : ORIGIN = 0x8000000, LENGTH = 508K
+CONFIG (r)      : ORIGIN = 0x807F000, LENGTH = 4K
 }
+
+/* Read-only configuration image programmed separately through ST-LINK. */
+__configuration_start__ = ORIGIN(CONFIG);
+__configuration_end__ = ORIGIN(CONFIG) + LENGTH(CONFIG);
+
+ASSERT(ORIGIN(FLASH) + LENGTH(FLASH) == ORIGIN(CONFIG),
+       "Firmware and configuration flash regions must be contiguous")
 
 /* Highest address of the user mode stack */
 _estack = ORIGIN(RAM) + LENGTH(RAM);    /* end of RAM */
@@ -76,6 +86,24 @@ SECTIONS
     KEEP(*(.isr_vector)) /* Startup code */
     . = ALIGN(4);
   } >FLASH
+
+  /* Firmware metadata lives at a stable offset immediately after the interrupt
+     vector table so BIN and HEX readers can identify the image. */
+  .firmware_metadata ORIGIN(FLASH) + 0x200 :
+  {
+    . = ALIGN(4);
+    __firmware_metadata_start__ = .;
+    KEEP(*(.firmware_metadata))
+    . = ALIGN(4);
+    __firmware_metadata_end__ = .;
+  } >FLASH
+
+  ASSERT(SIZEOF(.isr_vector) <= 0x200,
+         "Interrupt vector table overlaps firmware metadata")
+  ASSERT(ADDR(.firmware_metadata) == ORIGIN(FLASH) + 0x200,
+         "Firmware metadata address changed")
+  ASSERT(SIZEOF(.firmware_metadata) == 32,
+         "Firmware metadata must be exactly 32 bytes")
 
   /* The program code and other data goes into FLASH */
   .text :

@@ -1,6 +1,6 @@
 /**
  * @file can_loadtest.c
- * @brief Load test for CAN1 on a real bus between two boards.
+ * @brief Load test of one CAN port on a real bus between two boards.
  *
  * Both boards run this same firmware. The board with the lower CAN identifier
  * is the master: it steps through the phases below once, 10 s each, and puts
@@ -30,7 +30,7 @@
 #include "console.h"
 #include "task.h"
 
-#define LOADTEST_PORT CAN_PORT_1
+#define LOADTEST_PORT BOARD_CAN_TEST_PORT
 #define LOADTEST_GENERATOR_STACK_WORDS 256U
 #define LOADTEST_CHECKER_STACK_WORDS 512U
 #define LOADTEST_PHASE_MS 10000U

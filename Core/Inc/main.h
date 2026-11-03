@@ -79,12 +79,12 @@ void Error_Handler(void);
 #define USART3_DE_RS485_GPIO_Port GPIOB
 #define LED_UART_Pin GPIO_PIN_9
 #define LED_UART_GPIO_Port GPIOC
-#define LED_CAN1_Pin GPIO_PIN_8
-#define LED_CAN1_GPIO_Port GPIOA
+#define LED_RS485_Pin GPIO_PIN_8
+#define LED_RS485_GPIO_Port GPIOA
 #define LED_CAN2_Pin GPIO_PIN_9
 #define LED_CAN2_GPIO_Port GPIOA
-#define LED_RS485_Pin GPIO_PIN_10
-#define LED_RS485_GPIO_Port GPIOA
+#define LED_CAN1_Pin GPIO_PIN_10
+#define LED_CAN1_GPIO_Port GPIOA
 
 /* USER CODE BEGIN Private defines */
 

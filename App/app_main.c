@@ -14,8 +14,10 @@
 #include "cmsis_os.h"
 #include "console.h"
 #include "fault.h"
+#include "firmware_info.h"
 #include "task.h"
 #include "uart_port.h"
+#include "uwb_task.h"
 
 #define HEARTBEAT_TASK_STACK_WORDS 384U
 
@@ -68,13 +70,17 @@ static void heartbeat_task(void *argument)
 
   (void)argument;
 
+  firmware_info_report();
+
   for (;;)
   {
     if (!can_ports_reported)
     {
       can_ports_reported = report_can_ports();
     }
+#if BOARD_TEST_MODE != BOARD_TEST_LED
     HAL_GPIO_TogglePin(BOARD_HEARTBEAT_LED_PORT, BOARD_HEARTBEAT_LED_PIN);
+#endif
     osDelay(BOARD_HEARTBEAT_PERIOD_MS);
   }
 }
@@ -91,6 +97,7 @@ void app_main_init(void)
   };
 
   console_init();
+  firmware_info_load_configuration();
 
   bringup_test_adjust_can_config(can_config);
   if (!can_port_init(can_config))
@@ -103,5 +110,10 @@ void app_main_init(void)
   }
 
   bringup_test_init();
+#if BOARD_TEST_MODE == BOARD_TEST_NONE
+  /* The bring-up tests read the CAN1 queue themselves, so the UWB task only
+     runs without them. */
+  uwb_task_init();
+#endif
   (void)osThreadNew(heartbeat_task, NULL, &heartbeat_attributes);
 }

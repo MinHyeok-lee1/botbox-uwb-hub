@@ -1,12 +1,13 @@
 /**
  * @file can_monitor.c
- * @brief Receive-only check of CAN1 against an existing device.
+ * @brief Receive-only check of one CAN port against an existing device.
  *
  * Nothing is transmitted, so a classic CAN device on the bus never sees a CAN
  * FD frame from this board. The port still acknowledges what it receives.
  *
- * The data path is the one the application will use: the FDCAN1 receive
- * interrupt puts each frame into the driver's RX queue (see can_port.c), and
+ * The port is BOARD_CAN_MONITOR_PORT. The data path is the one the
+ * application will use: the FDCAN receive interrupt puts each frame into the
+ * driver's RX queue (see can_port.c), and
  * the task here wakes up periodically, takes out everything that is waiting
  * and prints it. A summary line follows once a second. Printing is capped per
  * second so that a busy bus cannot flood the console; frames over the cap are
@@ -19,12 +20,15 @@
 #include <stdint.h>
 
 #include "FreeRTOS.h"
+#include "board_config.h"
 #include "can_port.h"
 #include "cmsis_os.h"
 #include "console.h"
 #include "task.h"
 
-#define CAN_MONITOR_PORT CAN_PORT_1
+#define CAN_MONITOR_PORT BOARD_CAN_MONITOR_PORT
+/* Number printed in "canN": CAN_PORT_1 is 0. */
+#define CAN_MONITOR_PORT_NUMBER ((unsigned)CAN_MONITOR_PORT + 1U)
 #define CAN_MONITOR_STACK_WORDS 512U
 /* How often the task checks the RX queue. The queue holds 16 frames, so this
    period copes with up to 1600 frames/s. */
@@ -54,7 +58,8 @@ static void print_frame(const can_frame_t *frame)
   }
   data_text[position] = '\0';
 
-  console_printf("can1 rx | id=0x%lX %s %s len=%u |%s%s\r\n", (unsigned long)frame->id,
+  console_printf("can%u rx | id=0x%lX %s %s len=%u |%s%s\r\n", CAN_MONITOR_PORT_NUMBER,
+                 (unsigned long)frame->id,
                  frame->extended ? "ext" : "std",
                  frame->fd ? (frame->brs ? "fd+brs" : "fd") : "classic", (unsigned)frame->length,
                  data_text, (frame->length > shown) ? " ..." : "");
@@ -65,8 +70,8 @@ static void report(uint32_t frames_total, uint32_t frames_this_period, uint32_t 
   can_port_stats_t stats;
 
   can_port_get_stats(CAN_MONITOR_PORT, &stats);
-  console_printf("can1 monitor | %lu frames/s total=%lu | rec=%u tec=%u lec=%u busoff=%lu\r\n",
-                 (unsigned long)frames_this_period, (unsigned long)frames_total,
+  console_printf("can%u monitor | %lu frames/s total=%lu | rec=%u tec=%u lec=%u busoff=%lu\r\n",
+                 CAN_MONITOR_PORT_NUMBER, (unsigned long)frames_this_period, (unsigned long)frames_total,
                  (unsigned)stats.rx_error_count, (unsigned)stats.tx_error_count,
                  (unsigned)stats.last_error, (unsigned long)stats.bus_off_events);
   console_printf("      per_poll_max=%lu rxq_max=%lu rxq_drop=%lu fifo_lost=%lu console_drop=%lu\r\n",

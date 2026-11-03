@@ -4,7 +4,6 @@
 #include <cmath>
 
 #include "FreeRTOS.h"
-#include "gpio_input_manager.hpp"
 #include "task.h"
 #include "uwb_direction_angle.hpp"
 
@@ -13,14 +12,10 @@ UwbMoveMaker::UwbMoveMaker() { reset(); }
 UwbMoveMaker::~UwbMoveMaker() {}
 
 void UwbMoveMaker::reset() {
-  _moveBufferIndex = 0;
-  for (uint8_t i = 0; i < UWB_MOVE_BUFFER_CAPACITY; ++i) {
-    _moveBuffer[i] = UwbMove::STOP;
-  }
   _prevDirection       = UwbDirection::UNKNOWN;
   _prevTurn            = UwbTurn::UNKNOWN;
   _prevBackTurn        = UwbTurn::UNKNOWN;
-  _prevMove            = UwbMove::STOP;
+  _directionFlipCount  = 0;
   _smoothedTurnRatio   = uwb_follow_configuration().initial_turn_ratio_percent;
   _smoothedTurnAngleDeg = 0.0f;
   _turnRatioDirection  = UwbDirection::UNKNOWN;
@@ -156,229 +151,23 @@ UwbDirection UwbMoveMaker::calculate_direction(int16_t distanceFront,
   } else if (absDiff > configuration.stop_threshold_fb_mm) {
     direction = (diff > 0) ? UwbDirection::BACKWARD : UwbDirection::FORWARD;
   }
+
+  // A tag that really moves from the front to the back passes the side of the
+  // cart, which reads as MID. A change straight from FORWARD to BACKWARD (or
+  // back) is therefore more likely a bad sample, so it must repeat for
+  // direction_flip_confirm_count cycles in a row before it is accepted.
+  const bool isDirectFlip = (_prevDirection == UwbDirection::FORWARD &&
+                             direction == UwbDirection::BACKWARD) ||
+                            (_prevDirection == UwbDirection::BACKWARD &&
+                             direction == UwbDirection::FORWARD);
+  if (isDirectFlip) {
+    _directionFlipCount++;
+    if (_directionFlipCount < configuration.direction_flip_confirm_count) {
+      return _prevDirection;
+    }
+  }
+  _directionFlipCount = 0;
+
   _prevDirection = direction;
   return direction;
-}
-
-// ---------------------------------------------------------------------------
-// _move_buffer_update (내부 공통 헬퍼)
-// ---------------------------------------------------------------------------
-static UwbMove move_buffer_update(UwbMove* buf, uint8_t& idx,
-                                  uint8_t maxSize, UwbMove move,
-                                  bool shouldFastResume) {
-  if (shouldFastResume) {
-    for (uint8_t i = 0; i < maxSize; ++i) {
-      buf[i] = UwbMove::MOVE;
-    }
-    idx = 0;
-    return UwbMove::MOVE;
-  }
-
-  buf[idx++] = move;
-  if (idx >= maxSize) idx = 0;
-
-  uint8_t cnt = 0;
-  for (uint8_t i = 0; i < maxSize; ++i) {
-    if (buf[i] == UwbMove::MOVE) cnt++;
-  }
-  return (cnt > maxSize / 2) ? UwbMove::MOVE : UwbMove::STOP;
-}
-
-static bool is_close_stop_distance(int16_t distance, uint16_t minStop) {
-  return distance >= 0 && distance <= minStop;
-}
-
-UwbMove UwbMoveMaker::calculate_move(UwbDirection dir, int16_t distanceFront,
-                                     int16_t distanceBack) {
-  return calculate_move(dir, distanceFront, distanceBack, distanceFront,
-                        distanceFront);
-}
-
-UwbMove UwbMoveMaker::calculate_move(UwbDirection dir, int16_t distanceFront,
-                                     int16_t distanceBack, int16_t distanceLeft,
-                                     int16_t distanceRight) {
-  const auto &configuration = uwb_follow_configuration();
-  auto speedLevel = GpioInputManager::get_instance().speed_switch_state();
-
-  const auto minMoveConst =
-      speedLevel == SpeedSwitchState::ADC_LOW_LEVEL_1
-          ? configuration.min_move_level1_mm
-      : speedLevel == SpeedSwitchState::ADC_MID_LEVEL_2
-          ? configuration.min_move_level2_mm
-          : configuration.min_move_level3_mm;
-  const auto minStopConst =
-      speedLevel == SpeedSwitchState::ADC_LOW_LEVEL_1
-          ? configuration.min_stop_level1_mm
-      : speedLevel == SpeedSwitchState::ADC_MID_LEVEL_2
-          ? configuration.min_stop_level2_mm
-          : configuration.min_stop_level3_mm;
-  const auto minMove =
-      (dir == UwbDirection::MID) ? minMoveConst * 3 / 2 : minMoveConst;
-  const auto minStop =
-      (dir == UwbDirection::MID) ? minStopConst * 3 / 2 : minStopConst;
-
-  const auto minMoveBackConst =
-      speedLevel == SpeedSwitchState::ADC_LOW_LEVEL_1
-          ? configuration.min_move_back_level1_mm
-      : speedLevel == SpeedSwitchState::ADC_MID_LEVEL_2
-          ? configuration.min_move_back_level2_mm
-          : configuration.min_move_back_level3_mm;
-  const auto minStopBackConst =
-      speedLevel == SpeedSwitchState::ADC_LOW_LEVEL_1
-          ? configuration.min_stop_back_level1_mm
-      : speedLevel == SpeedSwitchState::ADC_MID_LEVEL_2
-          ? configuration.min_stop_back_level2_mm
-          : configuration.min_stop_back_level3_mm;
-  const auto minMoveBack =
-      (dir == UwbDirection::MID) ? minMoveBackConst * 3 / 2 : minMoveBackConst;
-  const auto minStopBack =
-      (dir == UwbDirection::MID) ? minStopBackConst * 3 / 2 : minStopBackConst;
-
-  bool shouldMove = false;
-  bool shouldStop = false;
-  const bool isForwardCloseStop =
-      dir == UwbDirection::FORWARD &&
-      (is_close_stop_distance(distanceFront, minStop) ||
-       is_close_stop_distance(distanceLeft, minStop) ||
-       is_close_stop_distance(distanceRight, minStop));
-
-  if ((static_cast<int32_t>(distanceFront) <
-           static_cast<int32_t>(configuration.max_move_mm) &&
-       static_cast<int32_t>(distanceFront) >
-           static_cast<int32_t>(minMove)) &&
-      (static_cast<int32_t>(distanceBack) <
-           static_cast<int32_t>(configuration.max_move_mm) &&
-       static_cast<int32_t>(distanceBack) >
-           static_cast<int32_t>(minMoveBack))) {
-    shouldMove = true;
-  }
-  if ((static_cast<int32_t>(distanceFront) >=
-           static_cast<int32_t>(configuration.max_stop_mm) ||
-       (dir == UwbDirection::FORWARD ? isForwardCloseStop
-                                     : static_cast<int32_t>(distanceFront) <=
-                                           static_cast<int32_t>(minStop))) ||
-      (static_cast<int32_t>(distanceBack) >=
-           static_cast<int32_t>(configuration.max_stop_mm) ||
-       static_cast<int32_t>(distanceBack) <=
-           static_cast<int32_t>(minStopBack))) {
-    shouldStop = true;
-  }
-
-  const UwbMove prevMove = _prevMove;
-  UwbMove move = _prevMove;
-  if (shouldMove && !shouldStop) {
-    move = UwbMove::MOVE;
-  } else if (!shouldMove && shouldStop) {
-    move = UwbMove::STOP;
-  }
-  _prevMove = move;
-
-  return move_buffer_update(_moveBuffer, _moveBufferIndex,
-                            static_cast<uint8_t>(
-                                configuration.move_buffer_size),
-                            move,
-                            prevMove == UwbMove::STOP &&
-                                move == UwbMove::MOVE);
-}
-
-// ---------------------------------------------------------------------------
-// calculate_front_only_move
-// ---------------------------------------------------------------------------
-UwbMove UwbMoveMaker::calculate_front_only_move(int16_t distanceFront) {
-  return calculate_front_only_move(distanceFront, distanceFront, distanceFront);
-}
-
-UwbMove UwbMoveMaker::calculate_front_only_move(int16_t distanceFront,
-                                                int16_t distanceLeft,
-                                                int16_t distanceRight) {
-  const auto &configuration = uwb_follow_configuration();
-  auto speedLevel = GpioInputManager::get_instance().speed_switch_state();
-
-  const auto minMove =
-      speedLevel == SpeedSwitchState::ADC_LOW_LEVEL_1
-          ? configuration.min_move_level1_mm
-      : speedLevel == SpeedSwitchState::ADC_MID_LEVEL_2
-          ? configuration.min_move_level2_mm
-          : configuration.min_move_level3_mm;
-  const auto minStop =
-      speedLevel == SpeedSwitchState::ADC_LOW_LEVEL_1
-          ? configuration.min_stop_level1_mm
-      : speedLevel == SpeedSwitchState::ADC_MID_LEVEL_2
-          ? configuration.min_stop_level2_mm
-          : configuration.min_stop_level3_mm;
-
-  const bool shouldMove =
-      (static_cast<int32_t>(distanceFront) <
-       static_cast<int32_t>(configuration.max_move_mm)) &&
-      (static_cast<int32_t>(distanceFront) > static_cast<int32_t>(minMove));
-  const bool shouldStop =
-      (static_cast<int32_t>(distanceFront) >=
-       static_cast<int32_t>(configuration.max_stop_mm)) ||
-      is_close_stop_distance(distanceFront, minStop) ||
-      is_close_stop_distance(distanceLeft, minStop) ||
-      is_close_stop_distance(distanceRight, minStop);
-
-  const UwbMove prevMove = _prevMove;
-  UwbMove move = _prevMove;
-  if (shouldMove && !shouldStop) {
-    move = UwbMove::MOVE;
-  } else if (!shouldMove && shouldStop) {
-    move = UwbMove::STOP;
-  }
-  _prevMove = move;
-
-  return move_buffer_update(_moveBuffer, _moveBufferIndex,
-                            static_cast<uint8_t>(
-                                configuration.move_buffer_size),
-                            move,
-                            prevMove == UwbMove::STOP &&
-                                move == UwbMove::MOVE);
-}
-
-// ---------------------------------------------------------------------------
-// calculate_back_only_move
-// ---------------------------------------------------------------------------
-UwbMove UwbMoveMaker::calculate_back_only_move(int16_t distanceBack) {
-  const auto &configuration = uwb_follow_configuration();
-  const auto speedLevel = GpioInputManager::get_instance().speed_switch_state();
-
-  const auto minMoveBack =
-      speedLevel == SpeedSwitchState::ADC_LOW_LEVEL_1
-          ? configuration.min_move_back_level1_mm
-      : speedLevel == SpeedSwitchState::ADC_MID_LEVEL_2
-          ? configuration.min_move_back_level2_mm
-          : configuration.min_move_back_level3_mm;
-  const auto minStopBack =
-      speedLevel == SpeedSwitchState::ADC_LOW_LEVEL_1
-          ? configuration.min_stop_back_level1_mm
-      : speedLevel == SpeedSwitchState::ADC_MID_LEVEL_2
-          ? configuration.min_stop_back_level2_mm
-          : configuration.min_stop_back_level3_mm;
-
-  const bool shouldMove =
-      (static_cast<int32_t>(distanceBack) <
-       static_cast<int32_t>(configuration.max_move_mm)) &&
-      (static_cast<int32_t>(distanceBack) >
-       static_cast<int32_t>(minMoveBack));
-  const bool shouldStop =
-      (static_cast<int32_t>(distanceBack) >=
-       static_cast<int32_t>(configuration.max_stop_mm)) ||
-      (static_cast<int32_t>(distanceBack) <=
-       static_cast<int32_t>(minStopBack));
-
-  const UwbMove prevMove = _prevMove;
-  UwbMove move = _prevMove;
-  if (shouldMove && !shouldStop) {
-    move = UwbMove::MOVE;
-  } else if (!shouldMove && shouldStop) {
-    move = UwbMove::STOP;
-  }
-  _prevMove = move;
-
-  return move_buffer_update(_moveBuffer, _moveBufferIndex,
-                            static_cast<uint8_t>(
-                                configuration.move_buffer_size),
-                            move,
-                            prevMove == UwbMove::STOP &&
-                                move == UwbMove::MOVE);
 }

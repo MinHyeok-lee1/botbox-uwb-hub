@@ -1,0 +1,31 @@
+{
+  "manifest_version": 1,
+  "firmware": {
+    "emitted_firmware_metadata_schema": 1,
+    "configuration": {
+      "binary_format": {
+        "minimum_supported": 1,
+        "current": 1
+      },
+      "schema": {
+        "minimum_supported": 1,
+        "current": 1
+      }
+    }
+  },
+  "uploader": {
+    "supported_firmware_metadata_schemas": [
+      1
+    ],
+    "supported_generated_configurations": [
+      {
+        "binary_format": 1,
+        "schema": 1
+      }
+    ],
+    "generated_configuration": {
+      "binary_format": 1,
+      "schema": 1
+    }
+  }
+}

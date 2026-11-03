@@ -31,6 +31,7 @@ typedef enum
 typedef struct
 {
   uint32_t id;
+  uint32_t rx_tick; /* RTOS tick at reception, set by the driver. Ignored on send. */
   uint8_t length; /* Payload bytes: 0-8, 12, 16, 20, 24, 32, 48 or 64. */
   bool extended;  /* 29-bit identifier. */
   bool fd;        /* CAN FD frame format. */
@@ -95,6 +96,14 @@ bool can_port_init(const can_port_config_t config[CAN_PORT_COUNT]);
  *         invalid or the TX queue stayed full for @p timeout.
  */
 bool can_port_send(can_port_id_t port_id, const can_frame_t *frame, TickType_t timeout);
+
+/**
+ * Frames queued for transmission that the CAN TX task has not yet handed to
+ * the hardware. Frames already in the three hardware TX buffers are not
+ * counted. A periodic sender can use this to skip a cycle instead of letting
+ * old frames pile up while nobody acknowledges them.
+ */
+uint32_t can_port_tx_pending(can_port_id_t port_id);
 
 /** Wait for a received frame. @return false on timeout. */
 bool can_port_receive(can_port_id_t port_id, can_frame_t *frame, TickType_t timeout);

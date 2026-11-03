@@ -18,20 +18,17 @@ enum class UwbTurn : uint8_t {
   RIGHT,
 };
 
-enum class UwbMove : uint8_t {
-  STOP,
-  MOVE,
-};
-
+// Turns the sensor distances into direction, turn and turn ratio. The hub does
+// not decide whether to move: the botbox+ move/stop checks, which depend on
+// the speed level, are done by the drive board.
 class UwbMoveMaker {
 private:
-  uint8_t _moveBufferIndex = 0;
-  UwbMove _moveBuffer[UWB_MOVE_BUFFER_CAPACITY];
-
   UwbDirection _prevDirection;
   UwbTurn      _prevTurn;
   UwbTurn      _prevBackTurn;
-  UwbMove      _prevMove;
+  // Cycles in a row in which the distances asked for a direct
+  // FORWARD <-> BACKWARD change that has not been accepted yet.
+  uint8_t      _directionFlipCount = 0;
 
   float _smoothedTurnRatio = 100.0f;
   float _smoothedTurnAngleDeg = 0.0f;
@@ -57,16 +54,15 @@ public:
                                     UwbDirection dir,
                                     bool areSamplesSynchronized);
   UwbDirection calculate_direction(int16_t distanceFront, int16_t distanceBack);
-  UwbMove      calculate_move(UwbDirection dir, int16_t distanceFront,
-                               int16_t distanceBack);
-  UwbMove      calculate_move(UwbDirection dir, int16_t distanceFront,
-                               int16_t distanceBack, int16_t distanceLeft,
-                               int16_t distanceRight);
-  UwbMove      calculate_front_only_move(int16_t distanceFront);
-  UwbMove      calculate_front_only_move(int16_t distanceFront,
-                                         int16_t distanceLeft,
-                                         int16_t distanceRight);
-  UwbMove      calculate_back_only_move(int16_t distanceBack);
+  // True while calculate_direction() is holding the previous direction
+  // because a direct FORWARD <-> BACKWARD change is not confirmed yet.
+  bool         is_direction_flip_pending() const {
+    return _directionFlipCount != 0U;
+  }
+  // Drops an unconfirmed FORWARD <-> BACKWARD change. Called for every cycle
+  // that does not run calculate_direction(), so that only consecutive cycles
+  // count towards the confirmation.
+  void         cancel_direction_flip() { _directionFlipCount = 0; }
   int16_t      turn_angle_deg() const {
     return static_cast<int16_t>(_smoothedTurnAngleDeg);
   }

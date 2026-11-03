@@ -21,9 +21,12 @@
    CAN_LOOPBACK  CAN internal loopback self-test, no wiring needed
    CAN_LINK      1 frame/s exchange between two boards on the real CAN bus
    CAN_LOAD      one cycle of the two-board CAN load test
-   CAN_MONITOR   receive only on CAN1 and print the frames; transmits nothing
+                 (both on BOARD_CAN_TEST_PORT)
+   CAN_MONITOR   receive only on BOARD_CAN_MONITOR_PORT and print the frames;
+                 transmits nothing
    UART          continuous output and line check on UART5
-   RS485         request/reply exchange on the RS485 bus */
+   RS485         request/reply exchange on the RS485 bus
+   LED           the four LEDs light one after another; CAN ports stay off */
 #define BOARD_TEST_NONE 0
 #define BOARD_TEST_CAN_LOOPBACK 1
 #define BOARD_TEST_CAN_LINK 2
@@ -31,13 +34,25 @@
 #define BOARD_TEST_UART 4
 #define BOARD_TEST_RS485 5
 #define BOARD_TEST_CAN_MONITOR 6
-#define BOARD_TEST_MODE BOARD_TEST_CAN_MONITOR
+#define BOARD_TEST_LED 7
+#define BOARD_TEST_MODE BOARD_TEST_NONE
 
-/* CAN ports the application uses. The sample boards only have the CAN1
-   transceiver fitted; set BOARD_CAN2_ENABLE to 1 on hardware that has both.
-   The loopback self-test enables both ports regardless of these. */
+/* Port the two-board link and load tests run on (CAN_PORT_1 or CAN_PORT_2,
+   from can_port.h). Both boards must use the same port, wired to each other. */
+#define BOARD_CAN_TEST_PORT CAN_PORT_2
+
+/* Port the receive-only monitor test listens on (CAN_PORT_1 or CAN_PORT_2). */
+#define BOARD_CAN_MONITOR_PORT CAN_PORT_1
+
+/* CAN ports the application uses. The early sample boards only had the CAN1
+   transceiver fitted; the finished hardware has both. The loopback self-test
+   enables both ports regardless of these. */
 #define BOARD_CAN1_ENABLE 1
-#define BOARD_CAN2_ENABLE 0
+#define BOARD_CAN2_ENABLE 1
+
+/* First CAN2 identifier of the follow result sent to the drive board: classic
+   frames use this and the next two, CAN FD uses this one only. */
+#define BOARD_UWB_OUTPUT_CAN_ID_BASE 0x300U
 
 /* CAN FD transmitter delay compensation. The driver only applies it when the
    data prescaler is 1 or 2, as ISO 11898-1 requires: with a prescaler of 5 every

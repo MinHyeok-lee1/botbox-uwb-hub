@@ -1,8 +1,8 @@
 /**
  * @file can_linktest.c
- * @brief Bring-up check for CAN1 on a real bus between two boards.
+ * @brief Bring-up check of one CAN port on a real bus between two boards.
  *
- * Both boards run this same firmware. Once a second each board sends one frame
+ * The port is BOARD_CAN_TEST_PORT. Both boards run this same firmware. Once a second each board sends one frame
  * (rotating between classic CAN, CAN FD and CAN FD with bit rate switching)
  * carrying a sequence number and a pattern, and checks every frame it receives
  * from the peer for a valid pattern and a continuous sequence. The CAN
@@ -21,7 +21,7 @@
 #include "console.h"
 #include "task.h"
 
-#define LINKTEST_PORT CAN_PORT_1
+#define LINKTEST_PORT BOARD_CAN_TEST_PORT
 #define LINKTEST_TASK_STACK_WORDS 384U
 #define LINKTEST_PERIOD_MS 1000U
 #define LINKTEST_BASE_ID 0x100U
@@ -138,8 +138,9 @@ static void report(linktest_kind_t kind, uint32_t sequence)
   can_port_stats_t stats;
 
   can_port_get_stats(LINKTEST_PORT, &stats);
-  console_printf("link id=0x%03lX sent %-7s seq=%lu | rx ok=%lu bad=%lu gap=%lu peer=0x%03lX\r\n",
-                 (unsigned long)own_id, KIND_NAMES[kind], (unsigned long)sequence,
+  console_printf("link can%u id=0x%03lX sent %-7s seq=%lu | rx ok=%lu bad=%lu gap=%lu peer=0x%03lX\r\n",
+                 (unsigned)LINKTEST_PORT + 1U, (unsigned long)own_id, KIND_NAMES[kind],
+                 (unsigned long)sequence,
                  (unsigned long)rx_ok_count, (unsigned long)rx_bad_count,
                  (unsigned long)rx_gap_count, (unsigned long)peer_id);
   console_printf("     tx=%lu rx=%lu lost=%lu txq_full=%lu tec=%u rec=%u busoff=%lu lec=%u dlec=%u "

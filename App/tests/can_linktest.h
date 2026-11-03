@@ -1,6 +1,6 @@
 /**
  * @file can_linktest.h
- * @brief Bring-up check for CAN1 on a real bus between two boards.
+ * @brief Bring-up check of one CAN port on a real bus between two boards.
  */
 #ifndef CAN_LINKTEST_H
 #define CAN_LINKTEST_H
