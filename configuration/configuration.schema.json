@@ -567,30 +567,6 @@
           "user_description": "구동부로 보내는 사용자 위치 정보가 새 측정값에 얼마나 빠르게 반응할지 정합니다. 값을 높이면 빠르게 반응하고, 낮추면 부드럽지만 반응이 느려집니다."
         }
       ]
-    },
-    {
-      "key": "can_output",
-      "label": "CAN2 출력 설정",
-      "user_label": "출력 설정",
-      "description": "추종 계산 결과를 CAN2로 구동부에 보내는 방식을 설정합니다.",
-      "user_description": "계산한 추종 정보를 구동부로 보내는 통신 방식을 설정합니다.",
-      "fields": [
-        {
-          "key": "frame_format",
-          "binary_order": 28,
-          "label": "CAN2 출력 프레임 형식",
-          "user_label": "구동부 통신 형식",
-          "type": "integer",
-          "storage_type": "uint32",
-          "default": 0,
-          "minimum": 0,
-          "maximum": 2,
-          "editable": true,
-          "required": true,
-          "description": "0: classic CAN 데이터 프레임 3개(8바이트씩, ID 0x300~0x302). 1: CAN FD 프레임 1개(24바이트, ID 0x300). 2: CAN FD 프레임 1개, 데이터 구간 2 Mbit/s(BRS). 구동부 CAN 컨트롤러가 CAN FD를 지원하지 않으면 반드시 0을 사용해야 합니다.",
-          "user_description": "구동부와 통신하는 형식입니다. 0은 일반 CAN, 1과 2는 CAN FD입니다. 구동부가 CAN FD를 지원할 때만 1이나 2를 선택하세요."
-        }
-      ]
     }
   ],
   "rules": [

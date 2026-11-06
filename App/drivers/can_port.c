@@ -22,6 +22,7 @@
 #define CAN_PORT_TDC_MAX_DATA_PRESCALER 2U
 #define CAN_PORT_TDC_MAX_OFFSET 127U
 #define CAN_PORT_ALL_TX_BUFFERS (FDCAN_TX_BUFFER0 | FDCAN_TX_BUFFER1 | FDCAN_TX_BUFFER2)
+#define CAN_PORT_HW_TX_BUFFERS  3U
 #define CAN_PORT_NOTIFICATIONS                                                 \
   (FDCAN_IT_RX_FIFO0_NEW_MESSAGE | FDCAN_IT_RX_FIFO0_MESSAGE_LOST |            \
    FDCAN_IT_TX_COMPLETE | FDCAN_IT_BUS_OFF)
@@ -358,7 +359,13 @@ uint32_t can_port_tx_pending(can_port_id_t port_id)
   {
     return 0U;
   }
-  return (uint32_t)uxQueueMessagesWaiting(ports[port_id].tx_queue);
+  uint32_t pending = (uint32_t)uxQueueMessagesWaiting(ports[port_id].tx_queue);
+  const uint32_t hardware_free = HAL_FDCAN_GetTxFifoFreeLevel(ports[port_id].hfdcan);
+  if (hardware_free < CAN_PORT_HW_TX_BUFFERS)
+  {
+    pending += CAN_PORT_HW_TX_BUFFERS - hardware_free;
+  }
+  return pending;
 }
 
 bool can_port_receive(can_port_id_t port_id, can_frame_t *frame, TickType_t timeout)

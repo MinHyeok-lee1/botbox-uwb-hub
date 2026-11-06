@@ -59,15 +59,8 @@ UWB_FIELDS = (
     ("vector_smoothing_alpha", "f"),
 )
 
-CAN_OUTPUT_FIELDS = (
-    ("frame_format", "I"),
-)
-# 0 classic (three 8-byte frames), 1 CAN FD, 2 CAN FD with bit rate switching.
-CAN_OUTPUT_FRAME_FORMAT_MAX = 2
-
 CONFIGURATION_GROUP_FIELDS = (
     ("uwb_follow", UWB_FIELDS),
-    ("can_output", CAN_OUTPUT_FIELDS),
 )
 
 PAYLOAD_FORMAT = "<" + "".join(
@@ -247,16 +240,6 @@ def validate_uwb(configuration: dict) -> None:
     )
 
 
-def validate_can_output(configuration: dict) -> None:
-    frame_format = configuration["frame_format"]
-    _require(
-        isinstance(frame_format, int)
-        and not isinstance(frame_format, bool)
-        and 0 <= frame_format <= CAN_OUTPUT_FRAME_FORMAT_MAX,
-        f"frame_format must be 0..{CAN_OUTPUT_FRAME_FORMAT_MAX}",
-    )
-
-
 def validate(document: dict) -> None:
     _require(isinstance(document, dict), "configuration document must be an object")
     _require(
@@ -274,7 +257,6 @@ def validate(document: dict) -> None:
         _validate_group_fields(group_name, document.get(group_name), fields)
 
     validate_uwb(document["uwb_follow"])
-    validate_can_output(document["can_output"])
 
 
 def build_image(document: dict) -> bytes:

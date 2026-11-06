@@ -8,9 +8,10 @@
 #include "main.h"
 #include "usart.h"
 
-/* Heartbeat LED. The board has no dedicated status LED, so the UART LED is used. */
+/* Heartbeat LED. The board has no dedicated status LED, so the UART LED is
+ * used. */
 #define BOARD_HEARTBEAT_LED_PORT LED_UART_GPIO_Port
-#define BOARD_HEARTBEAT_LED_PIN  LED_UART_Pin
+#define BOARD_HEARTBEAT_LED_PIN LED_UART_Pin
 #define BOARD_HEARTBEAT_PERIOD_MS 500U
 
 /* Debug console (ST-LINK virtual COM port). */
@@ -42,7 +43,7 @@
 #define BOARD_CAN_TEST_PORT CAN_PORT_2
 
 /* Port the receive-only monitor test listens on (CAN_PORT_1 or CAN_PORT_2). */
-#define BOARD_CAN_MONITOR_PORT CAN_PORT_1
+#define BOARD_CAN_MONITOR_PORT CAN_PORT_2
 
 /* CAN ports the application uses. The early sample boards only had the CAN1
    transceiver fitted; the finished hardware has both. The loopback self-test
@@ -50,15 +51,11 @@
 #define BOARD_CAN1_ENABLE 1
 #define BOARD_CAN2_ENABLE 1
 
-/* First CAN2 identifier of the follow result sent to the drive board: classic
-   frames use this and the next two, CAN FD uses this one only. */
-#define BOARD_UWB_OUTPUT_CAN_ID_BASE 0x300U
-
 /* CAN FD transmitter delay compensation. The driver only applies it when the
-   data prescaler is 1 or 2, as ISO 11898-1 requires: with a prescaler of 5 every
-   BRS frame failed on the board, in internal loopback and on the bus. The offset
-   is derived from the data bit timing so that the secondary sample point sits at
-   the data sample point after the measured loop delay. */
+   data prescaler is 1 or 2, as ISO 11898-1 requires: with a prescaler of 5
+   every BRS frame failed on the board, in internal loopback and on the bus. The
+   offset is derived from the data bit timing so that the secondary sample point
+   sits at the data sample point after the measured loop delay. */
 #define BOARD_CAN_TDC_ENABLE 1
 #define BOARD_CAN_TDC_FILTER 0U
 

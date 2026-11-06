@@ -90,47 +90,45 @@ void UwbManager::update_output_estimates() {
                                     _distanceBack);
 }
 
-uint32_t UwbManager::current_sample_age_ms() const {
+uint8_t UwbManager::used_sensor_mask() const {
   if (!_isFollowingAvailable) {
-    return UWB_SAMPLE_AGE_UNKNOWN_MS;
+    return 0U;
   }
 
-  bool usesLeft = false;
-  bool usesRight = false;
-  bool usesBack = false;
   switch (_followMode) {
   case UwbFollowMode::DEFAULT:
-    usesLeft = usesRight = usesBack = true;
-    break;
+    return UWB_SENSOR_LEFT | UWB_SENSOR_RIGHT | UWB_SENSOR_BACK;
   case UwbFollowMode::FRONT_ONLY:
-    usesLeft = usesRight = true;
-    break;
+    return UWB_SENSOR_LEFT | UWB_SENSOR_RIGHT;
   case UwbFollowMode::BACK_ONLY:
-    usesBack = true;
-    break;
+    return UWB_SENSOR_BACK;
   case UwbFollowMode::LEFT_BACK:
-    usesLeft = usesBack = true;
-    break;
+    return UWB_SENSOR_LEFT | UWB_SENSOR_BACK;
   case UwbFollowMode::RIGHT_BACK:
-    usesRight = usesBack = true;
-    break;
+    return UWB_SENSOR_RIGHT | UWB_SENSOR_BACK;
   case UwbFollowMode::LEFT_ONLY:
-    usesLeft = true;
-    break;
+    return UWB_SENSOR_LEFT;
   case UwbFollowMode::RIGHT_ONLY:
-    usesRight = true;
-    break;
+    return UWB_SENSOR_RIGHT;
+  }
+  return 0U;
+}
+
+uint32_t UwbManager::current_sample_age_ms() const {
+  const uint8_t sensors = used_sensor_mask();
+  if (sensors == 0U) {
+    return UWB_SAMPLE_AGE_UNKNOWN_MS;
   }
 
   const TickType_t now = xTaskGetTickCount();
   TickType_t oldest = 0U;
-  if (usesLeft) {
+  if ((sensors & UWB_SENSOR_LEFT) != 0U) {
     oldest = std::max<TickType_t>(oldest, now - _leftUwb.last_rx_tick());
   }
-  if (usesRight) {
+  if ((sensors & UWB_SENSOR_RIGHT) != 0U) {
     oldest = std::max<TickType_t>(oldest, now - _rightUwb.last_rx_tick());
   }
-  if (usesBack) {
+  if ((sensors & UWB_SENSOR_BACK) != 0U) {
     oldest = std::max<TickType_t>(oldest, now - _backUwb.last_rx_tick());
   }
   return static_cast<uint32_t>(oldest) * portTICK_PERIOD_MS;
@@ -625,10 +623,11 @@ void UwbManager::apply_left_back_mode() {
   _turnRatio  = NEUTRAL_TURN_RATIO_PERCENT;
 
   if (_distanceLeft >= _distanceBack) {
-    // The back sensor is closer to the tag: turn backward-left.
+    // The back sensor is closer: use the left-side target bearing
+    // (botbox+ hotfix 321ccc1, 2026-11-05).
     _direction = UwbDirection::BACKWARD;
     _turn      = UwbTurn::UNKNOWN;
-    _backTurn  = UwbTurn::RIGHT;
+    _backTurn  = UwbTurn::LEFT;
     apply_close_back_turn_limit();
     set_ranges(UwbRangeRule::BACK_ONLY, UWB_INVALID_VALUE, _distanceBack,
                UWB_INVALID_VALUE, UWB_INVALID_VALUE);
@@ -648,10 +647,11 @@ void UwbManager::apply_right_back_mode() {
   _turnRatio  = NEUTRAL_TURN_RATIO_PERCENT;
 
   if (_distanceRight >= _distanceBack) {
-    // The back sensor is closer to the tag: turn backward-right.
+    // The back sensor is closer: use the right-side target bearing
+    // (botbox+ hotfix 321ccc1, 2026-11-05).
     _direction = UwbDirection::BACKWARD;
     _turn      = UwbTurn::UNKNOWN;
-    _backTurn  = UwbTurn::LEFT;
+    _backTurn  = UwbTurn::RIGHT;
     apply_close_back_turn_limit();
     set_ranges(UwbRangeRule::BACK_ONLY, UWB_INVALID_VALUE, _distanceBack,
                UWB_INVALID_VALUE, UWB_INVALID_VALUE);

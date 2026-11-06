@@ -57,9 +57,6 @@ const FirmwareConfigurationPayload DEFAULT_CONFIGURATION = {
     100.0f, // initial_turn_ratio_percent
     1U,     // back_uwb_enabled
     0.4f    // vector_smoothing_alpha
-},
-{
-    0U // frame_format
 }};
 
 const FirmwareConfigurationPayload *active_configuration =
@@ -183,9 +180,7 @@ bool valid_values(const FirmwareConfigurationPayload &payload) {
          configuration.initial_turn_ratio_percent <= 100.0f &&
          configuration.back_uwb_enabled <= 1U &&
          configuration.vector_smoothing_alpha > 0.0f &&
-         configuration.vector_smoothing_alpha <= 1.0f &&
-         payload.can_output.frame_format <=
-             static_cast<uint32_t>(CanOutputFrameFormat::FD_BRS);
+         configuration.vector_smoothing_alpha <= 1.0f;
 }
 
 } // namespace

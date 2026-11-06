@@ -29,8 +29,5 @@
     "initial_turn_ratio_percent": 100.0,
     "back_uwb_enabled": true,
     "vector_smoothing_alpha": 0.4
-  },
-  "can_output": {
-    "frame_format": 0
   }
 }

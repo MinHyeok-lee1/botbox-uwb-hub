@@ -25,7 +25,6 @@ def read(path: Path) -> str:
 
 STRUCT_GROUPS = (
     ("uwb_follow", "UwbFollowConfiguration", "UWB_FIELDS"),
-    ("can_output", "CanOutputConfiguration", "CAN_OUTPUT_FIELDS"),
 )
 
 

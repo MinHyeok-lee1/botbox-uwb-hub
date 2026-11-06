@@ -34,10 +34,15 @@ enum class UwbModeDecision : uint8_t {
   RIGHT_ONLY,
 };
 
-// Why the hub has no steering result. Stopping for distance is the drive
-// board's decision and is not reported here.
 static constexpr uint32_t UWB_SAMPLE_AGE_UNKNOWN_MS = UINT32_MAX;
 
+// Bits of UwbManager::used_sensor_mask().
+static constexpr uint8_t UWB_SENSOR_LEFT = 1U << 0;
+static constexpr uint8_t UWB_SENSOR_RIGHT = 1U << 1;
+static constexpr uint8_t UWB_SENSOR_BACK = 1U << 2;
+
+// Why the hub has no steering result. Stopping for distance is the drive
+// board's decision and is not reported here.
 enum class UwbStopReason : uint8_t {
   NONE,
   NOT_FOLLOWING,
@@ -221,6 +226,9 @@ public:
   // Age, at the last update(), of the oldest sensor sample the current follow
   // mode uses. UWB_SAMPLE_AGE_UNKNOWN_MS while not following.
   uint32_t sample_age_ms() const { return _sampleAgeMs; }
+  // UWB_SENSOR_* bits of the sensors the current follow mode uses; 0 while
+  // not following.
+  uint8_t used_sensor_mask() const;
 
   int16_t left_distance() const { return _distanceLeft; }
   int16_t right_distance() const { return _distanceRight; }

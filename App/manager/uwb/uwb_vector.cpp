@@ -12,9 +12,18 @@ namespace {
 constexpr float GEOMETRY_TOLERANCE_MM = 100.0f;
 constexpr float RAD_TO_DDEG = 572.957795131f;
 constexpr int16_t DISTANCE_MAX_MM = 32767;
+// 0x7FFF marks an invalid coordinate in UWB_RESULT_B.
+constexpr int16_t COORDINATE_MAX_MM = 32766;
 
 const UwbVector NO_VECTOR = {UwbVectorQuality::NONE, -1,
-                             UWB_VECTOR_BEARING_NONE};
+                             UWB_VECTOR_BEARING_NONE, 0, 0, 0};
+
+int16_t clamp_mm(float value) {
+  const float limited = std::max(-static_cast<float>(COORDINATE_MAX_MM),
+                                 std::min(static_cast<float>(COORDINATE_MAX_MM),
+                                          value));
+  return static_cast<int16_t>(std::lround(limited));
+}
 
 } // namespace
 
@@ -58,6 +67,7 @@ UwbVector UwbVectorEstimator::update(UwbVectorQuality requested,
   const float y = (r * r - l * l) / (2.0f * d);
 
   float x = 0.0f;
+  float residual = 0.0f;
   if (requested == UwbVectorQuality::THREE_SENSOR) {
     // From B^2 = (x + D)^2 + y^2 and originSquared = x^2 + y^2.
     const float rearSpacing =
@@ -65,6 +75,14 @@ UwbVector UwbVectorEstimator::update(UwbVectorQuality requested,
     const float b = static_cast<float>(distanceBack);
     x = (b * b - originSquared - rearSpacing * rearSpacing) /
         (2.0f * rearSpacing);
+    // Three distances over-determine the two coordinates: the front pair
+    // fixes the origin distance and the back sensor fixes x. When they
+    // disagree the distances do not belong to one tag position.
+    residual = std::fabs(std::hypot(x, y) - std::sqrt(originSquared));
+    if (residual > static_cast<float>(UWB_VECTOR_RESIDUAL_MAX_MM)) {
+      reset();
+      return NO_VECTOR;
+    }
   } else {
     const float xSquared = originSquared - y * y;
     const float tolerance =
@@ -95,5 +113,6 @@ UwbVector UwbVectorEstimator::update(UwbVectorQuality requested,
     bearing -= 3600;
   }
   return {requested, static_cast<int16_t>(std::lround(distance)),
-          static_cast<int16_t>(bearing)};
+          static_cast<int16_t>(bearing), clamp_mm(_x), clamp_mm(_y),
+          static_cast<uint16_t>(std::lround(residual))};
 }

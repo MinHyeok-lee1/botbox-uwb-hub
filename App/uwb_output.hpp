@@ -1,7 +1,9 @@
 #pragma once
 
-// Publishes the follow result to the drive board on CAN2. The frame layout is
-// specified in .claude/docs/uwb-can-output-spec.md.
+// Publishes the follow result on CAN2 as the IF-1 messages UWB_RESULT_A
+// (0x240) and, optionally, UWB_RESULT_B (0x241) of the UWB follow module
+// interface specification v0.11. The mapping from the follow state is
+// described in .claude/docs/uwb-can-output-spec.md.
 
 #include <cstdint>
 

@@ -79,20 +79,8 @@ struct UwbFollowConfiguration {
   float vector_smoothing_alpha;
 };
 
-// Frame format of the follow result on CAN2 (see App/uwb_output.cpp).
-enum class CanOutputFrameFormat : uint32_t {
-  CLASSIC = 0U, // three classic 8-byte data frames
-  FD = 1U,      // one 24-byte CAN FD frame
-  FD_BRS = 2U,  // one 24-byte CAN FD frame with bit rate switching
-};
-
-struct CanOutputConfiguration {
-  uint32_t frame_format; // CanOutputFrameFormat
-};
-
 struct FirmwareConfigurationPayload {
   UwbFollowConfiguration uwb_follow;
-  CanOutputConfiguration can_output;
 };
 
 struct FirmwareConfigurationHeader {
@@ -118,13 +106,9 @@ static_assert(offsetof(UwbFollowConfiguration, center_in_threshold_lr_mm) == 24U
               "UWB uint32 alignment no longer matches packed BXUH payload");
 static_assert(sizeof(UwbFollowConfiguration) == 108U,
               "UWB configuration ABI changed");
-static_assert(sizeof(CanOutputConfiguration) == 4U,
-              "CAN output configuration ABI changed");
-static_assert(offsetof(FirmwareConfigurationPayload, can_output) == 108U,
-              "CAN output configuration offset changed");
-static_assert(sizeof(FirmwareConfigurationPayload) == 112U,
+static_assert(sizeof(FirmwareConfigurationPayload) == 108U,
               "Configuration payload ABI changed");
-static_assert(sizeof(FirmwareConfigurationImage) == 128U,
+static_assert(sizeof(FirmwareConfigurationImage) == 124U,
               "Configuration image ABI changed");
 static_assert(sizeof(FirmwareConfigurationImage) <= CONFIGURATION_FLASH_SIZE,
               "Configuration does not fit in the reserved flash area");

@@ -98,10 +98,10 @@ bool can_port_init(const can_port_config_t config[CAN_PORT_COUNT]);
 bool can_port_send(can_port_id_t port_id, const can_frame_t *frame, TickType_t timeout);
 
 /**
- * Frames queued for transmission that the CAN TX task has not yet handed to
- * the hardware. Frames already in the three hardware TX buffers are not
- * counted. A periodic sender can use this to skip a cycle instead of letting
- * old frames pile up while nobody acknowledges them.
+ * Frames waiting for transmission: those in the software TX queue plus those
+ * in the three hardware TX buffers. A frame the CAN TX task is handing over
+ * at this moment is not counted. A periodic sender can use this to skip a
+ * cycle instead of letting old frames pile up while nobody acknowledges them.
  */
 uint32_t can_port_tx_pending(can_port_id_t port_id);
 

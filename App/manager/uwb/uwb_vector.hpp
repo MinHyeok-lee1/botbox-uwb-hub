@@ -1,6 +1,7 @@
 #pragma once
 
-// Position of the tag as a distance and a signed bearing, for the CAN2 output.
+// Position of the tag as a distance and a signed bearing, for the CAN2 output
+// (UWB_RESULT_A/B).
 //
 // Frame of reference: origin at the midpoint of the left and right front
 // sensors, x forward, y to the left. The left sensor is at (0, +d/2), the
@@ -24,7 +25,17 @@ struct UwbVector {
   UwbVectorQuality quality;
   int16_t distanceMm;  // from the origin; -1 without a vector
   int16_t bearingDdeg; // 0.1 degree, -1800..1799, positive to the left
+  int16_t xMm;         // smoothed tag position, forward; 0 without a vector
+  int16_t yMm;         // smoothed tag position, left; 0 without a vector
+  // THREE_SENSOR: how far the three distances disagree, this cycle, before
+  // smoothing; at most UWB_VECTOR_RESIDUAL_MAX_MM. 0 otherwise.
+  uint16_t residualMm;
 };
+
+// Largest disagreement between the front pair and the back sensor that still
+// gives a THREE_SENSOR vector. Range noise is amplified close to the cart: a
+// 100 mm back-range error at 1 m reads as about 220 mm.
+static constexpr uint16_t UWB_VECTOR_RESIDUAL_MAX_MM = 300U;
 
 class UwbVectorEstimator {
 public:
