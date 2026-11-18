@@ -233,8 +233,16 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
 )
 
 # Add project symbols (macros)
+# UWB_RESULT_B (0x241) is optional and off by default (specification v0.11).
+# It moves to the CFG 0x0003 output mask once the specification defines the
+# bit order. Turn it on for receivers that need the tag position, e.g. the
+# Jetson recording bridge relays it: -DUWB_HUB_RESULT_B_ENABLE=ON.
+option(UWB_HUB_RESULT_B_ENABLE "Publish UWB_RESULT_B (0x241) on CAN2" OFF)
+message(STATUS "UWB_RESULT_B (0x241) output: ${UWB_HUB_RESULT_B_ENABLE}")
+
 target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user defined symbols
+    UWB_HUB_RESULT_B_ENABLE=$<BOOL:${UWB_HUB_RESULT_B_ENABLE}>
 )
 
 # Remove wrong libob.a library dependency when using cpp files

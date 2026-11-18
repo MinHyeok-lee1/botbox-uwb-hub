@@ -15,9 +15,13 @@ constexpr uint32_t UWB_RESULT_A_ID = 0x240U;
 constexpr uint32_t UWB_RESULT_B_ID = 0x241U;
 constexpr uint8_t UWB_RESULT_LENGTH = 8U;
 
-// UWB_RESULT_B is optional and off by default. It becomes selectable with
-// the CFG output mask (parameter 0x0003) in a later step.
-constexpr bool UWB_RESULT_B_ENABLED = false;
+// UWB_RESULT_B is optional and off by default. The build option
+// UWB_HUB_RESULT_B_ENABLE (CMakeLists.txt) turns it on until the CFG output
+// mask (parameter 0x0003) can select it.
+#ifndef UWB_HUB_RESULT_B_ENABLE
+#define UWB_HUB_RESULT_B_ENABLE 0
+#endif
+constexpr bool UWB_RESULT_B_ENABLED = (UWB_HUB_RESULT_B_ENABLE != 0);
 
 // Invalid values of the new messages.
 constexpr uint16_t INVALID_U16 = 0xFFFFU;
