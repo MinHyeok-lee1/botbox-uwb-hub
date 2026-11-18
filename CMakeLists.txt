@@ -31,7 +31,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS TRUE)
 
 # Core project settings
 # The version is written into the firmware metadata header and version.h.
-project(${CMAKE_PROJECT_NAME} VERSION 0.1.0)
+project(${CMAKE_PROJECT_NAME} VERSION 1.0.0)
 message("Build type: " ${CMAKE_BUILD_TYPE})
 
 # Configuration versions the firmware and the uploader agree on. Checked here
