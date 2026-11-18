@@ -35,7 +35,7 @@ change.
 | Firmware region | `0x08000000`-`0x0807F000` (linker `FLASH` 508K) | `STM32G474xx_FLASH.ld` |
 | Firmware metadata | 32 bytes at `0x08000200`, magic `BUFW` | `App/configuration/firmware_metadata.cpp` |
 | Configuration | 16-byte header + 108-byte payload at `0x0807F000` (linker `CONFIG` 4K), magic `BXUH` | `App/configuration/firmware_configuration.hpp` |
-| Flash banks | DBANK 0 or 1; the addresses above are the same in both modes | - |
+| Flash banks | DBANK=1 (dual bank, factory default) required by the uploader; DBANK=0 is refused | option bytes |
 
 The build checks the embedded metadata against `project(VERSION)` and the
 manifest (`cmake/verify_firmware_metadata.cmake`, "Verified firmware
@@ -51,8 +51,9 @@ How the uploader handles this board:
   uploader test against `configuration/default.json`).
 - It applies `mode_observation_timeout_ms >= (mode_decision_buffer_size - 1) x 190 ms`
   from schema 1, as this firmware does.
-- Until uploads are verified on hardware, the uploader allows hub uploads in
-  developer mode only.
+- Uploads were verified on hardware (2026-11-18, DBANK=1, CubeProgrammer
+  2.23): full install, and a firmware-only update keeps CONFIG. The hub does
+  not use DBANK=0, so the uploader refuses it rather than leave it untested.
 
 ## Changing the configuration
 
@@ -101,6 +102,5 @@ the same as for the control board (`botbox-stm32` `docs/schema_compatibility.md`
 - Firmware v1.0.0 (`7c10e88` on `feat/if5-sys-node`, not on `main` yet).
 - The uploader is pinned to `hub-v1.0.0-dev.1` (`c3306b2`). `hub-v0.1.0-dev.1`
   (`14627cb`) is no longer used; delete both after the `hub-v1.0.0` release.
-- Hardware verification of hub uploads is pending: CubeProgrammer option
-  byte labels (`DBANK`, `WRPxy_STRT/END`), firmware and configuration upload
-  in DBANK 0 and 1, configuration kept after a firmware update.
+- Hub uploads verified on a DBANK=1 board (2026-11-18). DBANK=0 is refused by
+  the uploader.
