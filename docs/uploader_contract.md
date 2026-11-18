@@ -99,8 +99,8 @@ the same as for the control board (`botbox-stm32` `docs/schema_compatibility.md`
 ## Current state (2026-11-18)
 
 - Firmware v1.0.0 (`7c10e88` on `feat/if5-sys-node`, not on `main` yet).
-- The uploader is pinned to `hub-v0.1.0-dev.1` (`14627cb`, main, v0.1.0).
-  The contract files are unchanged since then; re-pin after v1.0.0 is tagged.
+- The uploader is pinned to `hub-v1.0.0-dev.1` (`c3306b2`). `hub-v0.1.0-dev.1`
+  (`14627cb`) is no longer used; delete both after the `hub-v1.0.0` release.
 - Hardware verification of hub uploads is pending: CubeProgrammer option
   byte labels (`DBANK`, `WRPxy_STRT/END`), firmware and configuration upload
   in DBANK 0 and 1, configuration kept after a firmware update.
