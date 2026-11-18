@@ -12,3 +12,5 @@ mx.scratch
 .clangd
 CLAUDE.md
 .DS_Store
+
+__pycache__

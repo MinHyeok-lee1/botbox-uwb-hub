@@ -4,6 +4,7 @@
 #include <cstddef>
 
 #include "can_port.h"
+#include "task.h"
 
 namespace {
 
@@ -64,7 +65,14 @@ constexpr uint32_t QUALITY_MAX = 100U;
 // Degrees * 100 per bearingDdeg unit (0.1 degree).
 constexpr int32_t BEARING_CDEG_PER_DDEG = 10;
 
+// Skip a publication while this many frames still wait on the output port.
+// Normally nothing waits (a frame leaves in about 0.25 ms); one waiting frame
+// may be a heartbeat (sys_node), which must not cost a UWB result. With no
+// receiver acknowledging, at most this many old frames stay queued.
+constexpr uint32_t PUBLISH_MAX_PENDING = 2U;
+
 UwbOutputStats stats;
+UwbOutputSnapshot snapshot;
 
 void put_u16(uint8_t *bytes, uint16_t value) {
   bytes[0] = static_cast<uint8_t>(value & 0xFFU);
@@ -292,9 +300,9 @@ bool send_result(uint32_t id, const uint8_t data[UWB_RESULT_LENGTH]) {
 
 void uwb_output_publish(const UwbManager &manager, uint8_t sequence) {
   // Nothing acknowledges the frames while no receiver is on the bus, so they
-  // wait in the queue. Skipping keeps at most one old publication waiting
-  // instead of a backlog that would be sent late.
-  if (can_port_tx_pending(OUTPUT_PORT) != 0U) {
+  // wait in the queue. Skipping keeps at most PUBLISH_MAX_PENDING old frames
+  // waiting instead of a backlog that would be sent late.
+  if (can_port_tx_pending(OUTPUT_PORT) >= PUBLISH_MAX_PENDING) {
     stats.skipped_busy++;
     return;
   }
@@ -314,6 +322,23 @@ void uwb_output_publish(const UwbManager &manager, uint8_t sequence) {
     }
   }
   stats.published++;
+}
+
+void uwb_output_record_status(const UwbManager &manager) {
+  const uint8_t status = result_status(manager);
+  const uint32_t tick = xTaskGetTickCount();
+  taskENTER_CRITICAL();
+  snapshot.has_result = true;
+  snapshot.status = status;
+  snapshot.tick = tick;
+  taskEXIT_CRITICAL();
+}
+
+UwbOutputSnapshot uwb_output_snapshot() {
+  taskENTER_CRITICAL();
+  const UwbOutputSnapshot copy = snapshot;
+  taskEXIT_CRITICAL();
+  return copy;
 }
 
 const UwbOutputStats &uwb_output_stats() { return stats; }

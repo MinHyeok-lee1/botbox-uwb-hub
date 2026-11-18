@@ -51,6 +51,11 @@
 #define BOARD_CAN1_ENABLE 1
 #define BOARD_CAN2_ENABLE 1
 
+/* IF-5 SYS_HEARTBEAT (0x701) on the anchor bus CAN1 as well as CAN2. The spec
+   asks for it on every bus; set to 0 if an anchor firmware misbehaves with the
+   extra frame on its bus. */
+#define BOARD_IF5_HEARTBEAT_CAN1 1
+
 /* CAN FD transmitter delay compensation. The driver only applies it when the
    data prescaler is 1 or 2, as ISO 11898-1 requires: with a prescaler of 5
    every BRS frame failed on the board, in internal loopback and on the bus. The

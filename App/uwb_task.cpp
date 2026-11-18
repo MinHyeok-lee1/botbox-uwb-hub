@@ -21,6 +21,7 @@
 #include "cmsis_os.h"
 #include "console.h"
 #include "firmware_configuration.hpp"
+#include "sys_node.h"
 #include "task.h"
 #include "uwb_manager.hpp"
 #include "uwb_output.hpp"
@@ -108,13 +109,18 @@ const char *stop_reason_name(UwbStopReason reason) {
   return "?";
 }
 
-/* Pass every waiting UWB sensor packet to the manager. Anything else on the
-   bus is counted and dropped: the manager tells the sensors apart by the low
-   bits of the identifier only and reads four bytes without checking. */
+/* Pass every waiting UWB sensor packet to the manager and IF-5 frames to
+   sys_node. Anything else on the bus is counted and dropped: the manager tells
+   the sensors apart by the low bits of the identifier only and reads four
+   bytes without checking. */
 void drain_sensor_frames(UwbManager &manager) {
   can_frame_t frame;
 
   while (can_port_receive(UWB_SENSOR_PORT, &frame, 0U)) {
+    if (!frame.extended && sys_node_wants(frame.id)) {
+      sys_node_forward(UWB_SENSOR_PORT, &frame);
+      continue;
+    }
     if (frame.extended || frame.fd || frame.id < UWB_SENSOR_ID_FIRST ||
         frame.id > UWB_SENSOR_ID_LAST || frame.length < UWB_PACKET_SIZE) {
       ignored_frames++;
@@ -228,6 +234,7 @@ void uwb_task(void *argument) {
 
     manager.update();
     sequence++;
+    uwb_output_record_status(manager);
 #if BOARD_CAN2_ENABLE
     uwb_output_publish(manager, static_cast<uint8_t>(sequence));
 #endif

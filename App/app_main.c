@@ -16,6 +16,7 @@
 #include "fault.h"
 #include "firmware_info.h"
 #include "task.h"
+#include "sys_node.h"
 #include "uart_port.h"
 #include "uwb_task.h"
 
@@ -111,8 +112,13 @@ void app_main_init(void)
 
   bringup_test_init();
 #if BOARD_TEST_MODE == BOARD_TEST_NONE
-  /* The bring-up tests read the CAN1 queue themselves, so the UWB task only
-     runs without them. */
+  /* The bring-up tests read the CAN1 and CAN2 queues themselves, so the UWB
+     task and the IF-5 node only run without them. The IF-5 inbox must exist
+     before the UWB task forwards frames to it. */
+  if (!sys_node_init())
+  {
+    fault_panic(FAULT_INIT_FAILED, "sys_node");
+  }
   uwb_task_init();
 #endif
   (void)osThreadNew(heartbeat_task, NULL, &heartbeat_attributes);

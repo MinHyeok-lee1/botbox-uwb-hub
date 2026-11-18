@@ -161,6 +161,13 @@ configure_file(
     @ONLY
 )
 
+# Build number reported in the IF-5 heartbeat (fw_build, u16). Set by the
+# release build, e.g. -DFIRMWARE_BUILD=123.
+set(FIRMWARE_BUILD 0 CACHE STRING "Firmware build number (0-65535)")
+if(NOT FIRMWARE_BUILD MATCHES "^[0-9]+$" OR FIRMWARE_BUILD GREATER 65535)
+    message(FATAL_ERROR "FIRMWARE_BUILD must be 0-65535, got '${FIRMWARE_BUILD}'")
+endif()
+
 # version.h is generated into the build tree so the source tree stays clean.
 configure_file(
     ${CMAKE_CURRENT_SOURCE_DIR}/App/version.h.in
@@ -202,6 +209,10 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     App/configuration/firmware_metadata.cpp
     App/uwb_task.cpp
     App/uwb_output.cpp
+    # IF-5 common messages (heartbeat, CFG READ, ESTOP observation)
+    App/sys_node.cpp
+    App/protocol/if5_codec.cpp
+    App/protocol/if5_node.cpp
     # UWB follow algorithm from botbox+, without the move/stop decision
     App/manager/uwb/uwb_data_instance.cpp
     App/manager/uwb/uwb_manager.cpp
@@ -229,6 +240,7 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     App/configuration
     App/drivers
     App/manager/uwb
+    App/protocol
     App/tests
 )
 
