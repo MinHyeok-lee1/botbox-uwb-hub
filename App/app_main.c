@@ -32,7 +32,10 @@ static StackType_t heartbeat_task_stack[HEARTBEAT_TASK_STACK_WORDS];
 
 static can_port_config_t can_config[CAN_PORT_COUNT] = {
   [CAN_PORT_1] = {.enabled = BOARD_CAN1_ENABLE},
-  [CAN_PORT_2] = {.enabled = BOARD_CAN2_ENABLE},
+  /* CAN2 runs into classic-only receivers (bxCAN control board): in normal
+     operation no FD frame may leave. The bring-up tests send FD on purpose. */
+  [CAN_PORT_2] = {.enabled = BOARD_CAN2_ENABLE,
+                  .classic_only = (BOARD_TEST_MODE == BOARD_TEST_NONE)},
 };
 
 /* Print how each CAN port came up, once the driver has finished starting them.

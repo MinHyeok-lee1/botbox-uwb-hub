@@ -67,6 +67,22 @@ typedef struct
   volatile uint8_t bus_off_last_error;
   volatile uint8_t bus_off_data_last_error;
   volatile uint8_t bus_off_tdc_value;
+  volatile uint32_t fd_refused;
+
+  /* Latest-only slot (can_port_send_latest). Written by the sender and read
+     by the CAN TX task inside critical sections. */
+  can_frame_t latest_frame;
+  bool latest_valid;
+  TickType_t latest_tick;    /* When the slot was written. */
+  uint32_t latest_generation; /* Counts writes; tells a newer frame apart. */
+  TickType_t latest_max_age;
+  /* Hardware TX buffer holding the last slot frame, 0 when none. Only the CAN
+     TX task touches these two. */
+  uint32_t latest_buffer;
+  TickType_t latest_buffer_tick;
+  volatile uint32_t latest_replaced;
+  volatile uint32_t latest_expired;
+  volatile uint32_t latest_aborted;
 } can_port_t;
 
 static can_port_t ports[CAN_PORT_COUNT] = {
@@ -218,6 +234,110 @@ static void recover_bus_off(can_port_t *port)
   }
 }
 
+static void fill_tx_header(const can_frame_t *frame, FDCAN_TxHeaderTypeDef *header)
+{
+  *header = (FDCAN_TxHeaderTypeDef){
+    .Identifier = frame->id,
+    .IdType = frame->extended ? FDCAN_EXTENDED_ID : FDCAN_STANDARD_ID,
+    .TxFrameType = FDCAN_DATA_FRAME,
+    .ErrorStateIndicator = FDCAN_ESI_ACTIVE,
+    .BitRateSwitch = (frame->fd && frame->brs) ? FDCAN_BRS_ON : FDCAN_BRS_OFF,
+    .FDFormat = frame->fd ? FDCAN_FD_CAN : FDCAN_CLASSIC_CAN,
+    .TxEventFifoControl = FDCAN_NO_TX_EVENTS,
+    .MessageMarker = 0U,
+  };
+  /* The length was validated when the frame was handed over. */
+  (void)length_to_dlc(frame->length, &header->DataLength);
+}
+
+/* Hands the latest-slot frame to the hardware, keeping at most one there and
+   aborting it when it has waited max_age (no ACK or a busy bus). */
+static void pump_latest(can_port_t *port)
+{
+  const TickType_t now = xTaskGetTickCount();
+  can_frame_t frame;
+  TickType_t written;
+  TickType_t max_age;
+  uint32_t generation;
+
+  if (port->latest_buffer != 0U)
+  {
+    if (HAL_FDCAN_IsTxBufferMessagePending(port->hfdcan, port->latest_buffer) == 0U)
+    {
+      /* Sent or aborted. An aborted buffer never reports completion, so drop
+         it from the completion mask here. */
+      taskENTER_CRITICAL();
+      port->tx_pending_buffers &= ~port->latest_buffer;
+      taskEXIT_CRITICAL();
+      port->latest_buffer = 0U;
+    }
+    else
+    {
+      if ((now - port->latest_buffer_tick) >= port->latest_max_age)
+      {
+        if (HAL_FDCAN_AbortTxRequest(port->hfdcan, port->latest_buffer) == HAL_OK)
+        {
+          port->latest_aborted++;
+          /* Retried every pass until the buffer is free. */
+          port->latest_buffer_tick = now;
+        }
+      }
+      return;
+    }
+  }
+
+  taskENTER_CRITICAL();
+  const bool valid = port->latest_valid;
+  frame = port->latest_frame;
+  written = port->latest_tick;
+  max_age = port->latest_max_age;
+  generation = port->latest_generation;
+  taskEXIT_CRITICAL();
+
+  if (!valid)
+  {
+    return;
+  }
+  if ((now - written) >= max_age)
+  {
+    taskENTER_CRITICAL();
+    if (port->latest_generation == generation)
+    {
+      port->latest_valid = false;
+    }
+    taskEXIT_CRITICAL();
+    port->latest_expired++;
+    return;
+  }
+  if (HAL_FDCAN_GetTxFifoFreeLevel(port->hfdcan) == 0U)
+  {
+    return;
+  }
+
+  FDCAN_TxHeaderTypeDef header;
+  fill_tx_header(&frame, &header);
+
+  taskENTER_CRITICAL();
+  const bool accepted = (HAL_FDCAN_AddMessageToTxFifoQ(port->hfdcan, &header, frame.data) == HAL_OK);
+  if (accepted)
+  {
+    port->tx_pending_buffers |= port->hfdcan->LatestTxFifoQRequest;
+    port->latest_buffer = port->hfdcan->LatestTxFifoQRequest;
+    port->latest_buffer_tick = now;
+    /* A newer frame written meanwhile stays for the next pass. */
+    if (port->latest_generation == generation)
+    {
+      port->latest_valid = false;
+    }
+  }
+  taskEXIT_CRITICAL();
+
+  if (!accepted)
+  {
+    port->tx_failed++;
+  }
+}
+
 static void pump_tx(can_port_t *port)
 {
   can_frame_t frame;
@@ -228,20 +348,9 @@ static void pump_tx(can_port_t *port)
          (xQueuePeek(port->tx_queue, &frame, 0U) == pdTRUE))
   {
     bool accepted;
+    FDCAN_TxHeaderTypeDef header;
 
-    FDCAN_TxHeaderTypeDef header = {
-      .Identifier = frame.id,
-      .IdType = frame.extended ? FDCAN_EXTENDED_ID : FDCAN_STANDARD_ID,
-      .TxFrameType = FDCAN_DATA_FRAME,
-      .ErrorStateIndicator = FDCAN_ESI_ACTIVE,
-      .BitRateSwitch = (frame.fd && frame.brs) ? FDCAN_BRS_ON : FDCAN_BRS_OFF,
-      .FDFormat = frame.fd ? FDCAN_FD_CAN : FDCAN_CLASSIC_CAN,
-      .TxEventFifoControl = FDCAN_NO_TX_EVENTS,
-      .MessageMarker = 0U,
-    };
-
-    /* The length was validated in can_port_send(). */
-    (void)length_to_dlc(frame.length, &header.DataLength);
+    fill_tx_header(&frame, &header);
 
     /* Keeps the TX complete interrupt out until the buffer is marked pending. */
     taskENTER_CRITICAL();
@@ -293,6 +402,7 @@ static void can_tx_task(void *argument)
         continue;
       }
       pump_tx(port);
+      pump_latest(port);
     }
   }
 }
@@ -344,10 +454,52 @@ bool can_port_send(can_port_id_t port_id, const can_frame_t *frame, TickType_t t
   {
     return false;
   }
+  if (frame->fd && ports[port_id].config.classic_only)
+  {
+    ports[port_id].fd_refused++;
+    return false;
+  }
   if (xQueueSend(ports[port_id].tx_queue, frame, timeout) != pdTRUE)
   {
     return false;
   }
+
+  (void)xTaskNotifyGive(tx_task_handle);
+  return true;
+}
+
+bool can_port_send_latest(can_port_id_t port_id, const can_frame_t *frame, uint32_t max_age_ms)
+{
+  uint32_t dlc;
+
+  if ((port_id >= CAN_PORT_COUNT) || (frame == NULL) || !ports[port_id].config.enabled ||
+      ports[port_id].start_failed || (max_age_ms == 0U))
+  {
+    return false;
+  }
+  if (!length_to_dlc(frame->length, &dlc) ||
+      (!frame->fd && (frame->length > CAN_PORT_CLASSIC_MAX_LENGTH)))
+  {
+    return false;
+  }
+  can_port_t *port = &ports[port_id];
+  if (frame->fd && port->config.classic_only)
+  {
+    port->fd_refused++;
+    return false;
+  }
+
+  taskENTER_CRITICAL();
+  if (port->latest_valid)
+  {
+    port->latest_replaced++;
+  }
+  port->latest_frame = *frame;
+  port->latest_tick = xTaskGetTickCount();
+  port->latest_max_age = pdMS_TO_TICKS(max_age_ms);
+  port->latest_generation++;
+  port->latest_valid = true;
+  taskEXIT_CRITICAL();
 
   (void)xTaskNotifyGive(tx_task_handle);
   return true;
@@ -411,6 +563,10 @@ void can_port_get_stats(can_port_id_t port_id, can_port_stats_t *stats)
   stats->bus_off_last_error = port->bus_off_last_error;
   stats->bus_off_data_last_error = port->bus_off_data_last_error;
   stats->bus_off_tdc_value = port->bus_off_tdc_value;
+  stats->fd_refused = port->fd_refused;
+  stats->latest_replaced = port->latest_replaced;
+  stats->latest_expired = port->latest_expired;
+  stats->latest_aborted = port->latest_aborted;
 }
 
 uint32_t can_port_tx_task_stack_free(void)

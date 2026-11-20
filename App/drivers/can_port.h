@@ -45,6 +45,9 @@ typedef struct
   /* The peripheral is transmitted to itself internally and is disconnected
      from its pins. For tests without a bus. */
   bool internal_loopback;
+  /* Refuse CAN FD frames on this port. For buses with classic-only receivers
+     (bxCAN), where one FD frame would cause error frames. */
+  bool classic_only;
 } can_port_config_t;
 
 typedef struct
@@ -72,6 +75,10 @@ typedef struct
   uint8_t bus_off_last_error;
   uint8_t bus_off_data_last_error;
   uint8_t bus_off_tdc_value;
+  uint32_t fd_refused;     /* FD frames refused on a classic-only port. */
+  uint32_t latest_replaced; /* Latest-slot frames replaced before reaching the hardware. */
+  uint32_t latest_expired;  /* Latest-slot frames dropped as too old before the hardware. */
+  uint32_t latest_aborted;  /* Latest-slot frames aborted in a hardware TX buffer. */
 } can_port_stats_t;
 
 /**
@@ -96,6 +103,23 @@ bool can_port_init(const can_port_config_t config[CAN_PORT_COUNT]);
  *         invalid or the TX queue stayed full for @p timeout.
  */
 bool can_port_send(can_port_id_t port_id, const can_frame_t *frame, TickType_t timeout);
+
+/**
+ * Hand over the newest frame of a periodic message whose content goes stale,
+ * bypassing the TX queue. One slot per port: a frame that has not reached the
+ * hardware yet is replaced by the next call. Only one such frame is in the
+ * hardware at a time.
+ *
+ * Freshness: a frame older than @p max_age_ms is never handed to the hardware,
+ * and one that has waited in a hardware TX buffer that long (no ACK, busy bus)
+ * is aborted. So it leaves at most @p max_age_ms after this call, or not at all.
+ *
+ * Queued (can_port_send) frames go to the hardware before the slot.
+ *
+ * @return false if the port is disabled or failed to start or the frame is
+ *         invalid. true means stored, not sent.
+ */
+bool can_port_send_latest(can_port_id_t port_id, const can_frame_t *frame, uint32_t max_age_ms);
 
 /**
  * Frames waiting for transmission: those in the software TX queue plus those
