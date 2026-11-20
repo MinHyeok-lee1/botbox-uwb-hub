@@ -16,6 +16,8 @@
 #define CAN_PORT_TX_QUEUE_LENGTH 16U
 #define CAN_PORT_TX_TASK_STACK_WORDS 384U
 #define CAN_PORT_TX_TASK_POLL_MS 50U
+/* While a latest-slot frame waits, so its age limit is kept within this. */
+#define CAN_PORT_TX_TASK_FAST_POLL_MS 2U
 #define CAN_PORT_BUS_OFF_RECOVERY_MS 100U
 #define CAN_PORT_CLASSIC_MAX_LENGTH 8U
 #define CAN_PORT_DLC_COUNT 16U
@@ -79,7 +81,8 @@ typedef struct
   /* Hardware TX buffer holding the last slot frame, 0 when none. Only the CAN
      TX task touches these two. */
   uint32_t latest_buffer;
-  TickType_t latest_buffer_tick;
+  TickType_t latest_buffer_tick; /* When the frame in it was written to the slot. */
+  bool latest_abort_requested;
   volatile uint32_t latest_replaced;
   volatile uint32_t latest_expired;
   volatile uint32_t latest_aborted;
@@ -273,13 +276,14 @@ static void pump_latest(can_port_t *port)
     }
     else
     {
+      /* One deadline for both stages, counted from the slot write. */
       if ((now - port->latest_buffer_tick) >= port->latest_max_age)
       {
-        if (HAL_FDCAN_AbortTxRequest(port->hfdcan, port->latest_buffer) == HAL_OK)
+        if (!port->latest_abort_requested &&
+            (HAL_FDCAN_AbortTxRequest(port->hfdcan, port->latest_buffer) == HAL_OK))
         {
+          port->latest_abort_requested = true;
           port->latest_aborted++;
-          /* Retried every pass until the buffer is free. */
-          port->latest_buffer_tick = now;
         }
       }
       return;
@@ -323,7 +327,8 @@ static void pump_latest(can_port_t *port)
   {
     port->tx_pending_buffers |= port->hfdcan->LatestTxFifoQRequest;
     port->latest_buffer = port->hfdcan->LatestTxFifoQRequest;
-    port->latest_buffer_tick = now;
+    port->latest_buffer_tick = written;
+    port->latest_abort_requested = false;
     /* A newer frame written meanwhile stays for the next pass. */
     if (port->latest_generation == generation)
     {
@@ -386,7 +391,13 @@ static void can_tx_task(void *argument)
 
   for (;;)
   {
-    (void)ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(CAN_PORT_TX_TASK_POLL_MS));
+    bool latest_waiting = false;
+    for (size_t i = 0U; i < CAN_PORT_COUNT; i++)
+    {
+      latest_waiting = latest_waiting || ports[i].latest_valid || (ports[i].latest_buffer != 0U);
+    }
+    (void)ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(latest_waiting ? CAN_PORT_TX_TASK_FAST_POLL_MS
+                                                                : CAN_PORT_TX_TASK_POLL_MS));
 
     for (size_t i = 0U; i < CAN_PORT_COUNT; i++)
     {
