@@ -1,7 +1,7 @@
 {
   "schema_id": "botbox.uwb_hub.configuration",
   "metadata_version": 1,
-  "configuration_schema_version": 2,
+  "configuration_schema_version": 1,
   "default_profiles": {
     "default_profile": "default",
     "profiles": [

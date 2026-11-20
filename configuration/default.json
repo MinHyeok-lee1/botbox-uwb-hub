@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 1,
   "uwb_follow": {
     "receive_timeout_ms": 10000,
     "distance_filter_enabled": false,

@@ -385,13 +385,6 @@ def validate_binary_format(
         errors.append(
             "generator payload size does not match configuration.schema.json"
         )
-    if (
-        compatibility["firmware"]["configuration"]["schema"]["minimum_supported"]
-        < extract_cpp_constant(
-            header_text, "OLDEST_DECODABLE_CONFIGURATION_SCHEMA_VERSION"
-        )
-    ):
-        errors.append("manifest minimum schema is older than the firmware decoders")
     for old_version in range(
         compatibility["firmware"]["configuration"]["schema"]["minimum_supported"],
         schema_version,

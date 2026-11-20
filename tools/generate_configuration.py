@@ -11,7 +11,7 @@ from pathlib import Path
 
 MAGIC = b"BXUH"
 BINARY_FORMAT_VERSION = 1
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 1
 PDOA_OUTPUT_MODE_MAX = 2  # 0 legacy only, 1 both, 2 PDoA only
 HEADER_FORMAT = "<4sHHII"
 HEADER_SIZE = struct.calcsize(HEADER_FORMAT)

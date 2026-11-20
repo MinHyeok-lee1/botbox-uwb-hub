@@ -1,5 +1,5 @@
 #!/bin/sh
-# Build and run the flash configuration loader host tests (schema 1 migration).
+# Build and run the flash configuration loader host tests.
 set -eu
 root=$(cd "$(dirname "$0")/../.." && pwd)
 out=${TMPDIR:-/tmp}/botbox_configuration_tests
@@ -13,7 +13,7 @@ static constexpr uint16_t FIRMWARE_METADATA_SCHEMA_VERSION = 1U;
 static constexpr uint16_t MINIMUM_SUPPORTED_CONFIGURATION_BINARY_FORMAT_VERSION = 1U;
 static constexpr uint16_t CURRENT_CONFIGURATION_BINARY_FORMAT_VERSION = 1U;
 static constexpr uint16_t MINIMUM_SUPPORTED_CONFIGURATION_SCHEMA_VERSION = 1U;
-static constexpr uint16_t CURRENT_CONFIGURATION_SCHEMA_VERSION = 2U;
+static constexpr uint16_t CURRENT_CONFIGURATION_SCHEMA_VERSION = 1U;
 } }
 EOF
 c++ -std=c++17 -Wall -Wextra -Werror -I"$out/include" \

@@ -1,5 +1,5 @@
-// Host test for the flash configuration loader: current schema, schema 1
-// migration and rejected images.
+// Host test for the flash configuration loader: current schema and rejected
+// images.
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -57,33 +57,18 @@ void test_current_schema() {
         PDOA_OUTPUT_PDOA_ONLY);
 }
 
-void test_schema_1_migration() {
-  FirmwareConfigurationPayloadSchema1 old_payload = {
-      default_firmware_configuration().uwb_follow};
-  old_payload.uwb_follow.receive_timeout_ms = 4321U; // distinguishable
-  write_image(LEGACY_SCHEMA_1, &old_payload, sizeof(old_payload));
-  CHECK(load() == ConfigurationLoadStatus::LOADED_MIGRATED_FROM_SCHEMA_1);
-  CHECK(firmware_configuration().uwb_follow.receive_timeout_ms == 4321U);
-  CHECK(firmware_configuration().pdoa_follow.output_mode ==
-        PDOA_OUTPUT_LEGACY_ONLY);
-}
-
-void test_schema_1_with_current_length_rejected() {
-  FirmwareConfigurationPayload payload = default_firmware_configuration();
-  write_image(LEGACY_SCHEMA_1, &payload, sizeof(payload));
-  CHECK(load() == ConfigurationLoadStatus::INVALID_HEADER);
-}
-
-void test_current_schema_with_old_length_rejected() {
-  FirmwareConfigurationPayloadSchema1 old_payload = {
-      default_firmware_configuration().uwb_follow};
+// An image from before pdoa_follow was added (108-byte payload, same schema
+// number, nothing released) is rejected; the defaults apply.
+void test_old_length_rejected() {
+  const UwbFollowConfiguration old_payload = default_firmware_configuration().uwb_follow;
   write_image(CONFIGURATION_SCHEMA_VERSION, &old_payload, sizeof(old_payload));
   CHECK(load() == ConfigurationLoadStatus::INVALID_HEADER);
+  CHECK(firmware_configuration().pdoa_follow.output_mode == PDOA_OUTPUT_LEGACY_ONLY);
 }
 
 void test_unknown_schema_rejected() {
   FirmwareConfigurationPayload payload = default_firmware_configuration();
-  write_image(3U, &payload, sizeof(payload));
+  write_image(CONFIGURATION_SCHEMA_VERSION + 1U, &payload, sizeof(payload));
   CHECK(load() == ConfigurationLoadStatus::INVALID_HEADER);
 }
 
@@ -114,9 +99,7 @@ void test_empty_flash() {
 
 int main() {
   test_current_schema();
-  test_schema_1_migration();
-  test_schema_1_with_current_length_rejected();
-  test_current_schema_with_old_length_rejected();
+  test_old_length_rejected();
   test_unknown_schema_rejected();
   test_bad_crc();
   test_invalid_output_mode();

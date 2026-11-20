@@ -21,28 +21,17 @@ static constexpr uint16_t CONFIGURATION_BINARY_FORMAT_VERSION =
 static constexpr uint16_t CONFIGURATION_SCHEMA_VERSION =
     botbox::compatibility::CURRENT_CONFIGURATION_SCHEMA_VERSION;
 
-// Oldest configuration schema that has an in-memory decoder in
-// firmware_configuration.cpp (schema 1 is migrated to the current layout).
-// Raise the manifest minimum only down to this value; lowering it further needs
-// a new decoder and a new value here.
-static constexpr uint16_t OLDEST_DECODABLE_CONFIGURATION_SCHEMA_VERSION = 1U;
-
-// The loader decodes one binary format. Keep that range exact until
-// version-specific binary-format decoders are added.
+// The current loader decodes one packed payload layout. Keep the advertised
+// range exact until version-specific legacy decoders/migrations are added.
 static_assert(
     botbox::compatibility::
             MINIMUM_SUPPORTED_CONFIGURATION_BINARY_FORMAT_VERSION ==
         CONFIGURATION_BINARY_FORMAT_VERSION,
     "Add legacy binary-format decoders before widening compatibility");
-// Every schema the manifest advertises must have a decoder.
 static_assert(
-    botbox::compatibility::MINIMUM_SUPPORTED_CONFIGURATION_SCHEMA_VERSION >=
-        OLDEST_DECODABLE_CONFIGURATION_SCHEMA_VERSION,
-    "Add legacy configuration-schema decoders before widening compatibility");
-static_assert(
-    OLDEST_DECODABLE_CONFIGURATION_SCHEMA_VERSION <=
+    botbox::compatibility::MINIMUM_SUPPORTED_CONFIGURATION_SCHEMA_VERSION ==
         CONFIGURATION_SCHEMA_VERSION,
-    "Oldest decodable schema cannot exceed the current schema");
+    "Add legacy configuration-schema decoders before widening compatibility");
 
 // These are storage capacities. The active sizes come from configuration.
 static constexpr uint32_t UWB_MODE_DECISION_BUFFER_CAPACITY = 16U;
@@ -104,12 +93,6 @@ struct FirmwareConfigurationPayload {
   PdoaFollowConfiguration pdoa_follow;
 };
 
-// Schema 1 payload: the uwb_follow section only. Used to migrate old images.
-static constexpr uint16_t LEGACY_SCHEMA_1 = 1U;
-struct FirmwareConfigurationPayloadSchema1 {
-  UwbFollowConfiguration uwb_follow;
-};
-
 struct FirmwareConfigurationHeader {
   uint32_t magic;
   uint16_t binary_format_version;
@@ -135,8 +118,6 @@ static_assert(sizeof(UwbFollowConfiguration) == 108U,
               "UWB configuration ABI changed");
 static_assert(sizeof(PdoaFollowConfiguration) == 4U,
               "PDoA configuration ABI changed");
-static_assert(sizeof(FirmwareConfigurationPayloadSchema1) == 108U,
-              "Schema 1 payload ABI changed");
 static_assert(offsetof(FirmwareConfigurationPayload, pdoa_follow) == 108U,
               "PDoA section must follow uwb_follow");
 static_assert(sizeof(FirmwareConfigurationPayload) == 112U,
@@ -149,7 +130,6 @@ static_assert(sizeof(FirmwareConfigurationImage) <= CONFIGURATION_FLASH_SIZE,
 enum class ConfigurationLoadStatus : uint8_t {
   NOT_INITIALIZED,
   LOADED_FROM_FLASH,
-  LOADED_MIGRATED_FROM_SCHEMA_1, // valid schema 1 image; pdoa_follow defaulted
   EMPTY_FLASH,
   INVALID_HEADER,
   CRC_MISMATCH,
