@@ -15,6 +15,8 @@
 #include "firmware_configuration.hpp"
 #include "if5_codec.hpp"
 #include "if5_node.hpp"
+#include "pdoa_output.hpp"
+#include "pdoa_publisher.hpp"
 #include "queue.h"
 #include "task.h"
 #include "uwb_output.hpp"
@@ -133,6 +135,20 @@ if5::NodeState current_state(uint32_t now) {
     port_fault = port_fault || (stats.enabled && (stats.start_failed || stats.bus_off));
   }
 
+  // PDOA_ONLY: 0x240 is not sent, so the state follows the 0x244 result
+  // (provisional for the PDoA vehicle test; IF-5 v0.11 defines it on 0x240).
+  if (pdoa_output_suppresses_legacy()) {
+    const PdoaOutputSnapshot pdoa = pdoa_output_snapshot();
+    const uint32_t stale_ms = RESULT_STALE_PERIODS * pdoa::PUBLISH_PERIOD_MS;
+    const if5::StateInputs inputs = {
+        pdoa.has_result,
+        pdoa.has_result && (now - pdoa.tick) > stale_ms,
+        static_cast<uint8_t>(pdoa.follow_ready ? if5::RESULT_STATUS_VALID : 0U),
+        port_fault,
+    };
+    return if5::heartbeat_state(inputs);
+  }
+
   const UwbOutputSnapshot result = uwb_output_snapshot();
   const uint32_t stale_ms = RESULT_STALE_PERIODS * botbox::config::UWB_TASK_PERIOD_MS;
   const if5::StateInputs inputs = {
@@ -189,8 +205,12 @@ void handle_estop(const if5::Estop &estop, uint32_t tick) {
 }
 
 void handle_cfg(can_port_id_t port, const if5::CfgRequest &request) {
+  // Output rate: the 0x244 period in PDOA_ONLY, the 0x240 period otherwise.
+  const uint32_t output_period_ms = pdoa_output_suppresses_legacy()
+                                        ? pdoa::PUBLISH_PERIOD_MS
+                                        : botbox::config::UWB_TASK_PERIOD_MS;
   const if5::NodeInfo info = {
-      static_cast<uint16_t>(botbox::config::UWB_TASK_PERIOD_MS),
+      static_cast<uint16_t>(output_period_ms),
       OWN_NODE,
       external_bitrate_kbps(),
   };

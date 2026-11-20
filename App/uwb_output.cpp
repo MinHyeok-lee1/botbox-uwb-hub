@@ -4,6 +4,7 @@
 #include <cstddef>
 
 #include "can_port.h"
+#include "pdoa_output.hpp"
 #include "task.h"
 
 namespace {
@@ -299,6 +300,11 @@ bool send_result(uint32_t id, const uint8_t data[UWB_RESULT_LENGTH]) {
 } // namespace
 
 void uwb_output_publish(const UwbManager &manager, uint8_t sequence) {
+  // pdoa_follow.output_mode PDOA_ONLY: the 3-anchor result is not sent.
+  if (pdoa_output_suppresses_legacy()) {
+    return;
+  }
+
   // Nothing acknowledges the frames while no receiver is on the bus, so they
   // wait in the queue. Skipping keeps at most PUBLISH_MAX_PENDING old frames
   // waiting instead of a backlog that would be sent late.

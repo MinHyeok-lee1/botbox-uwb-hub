@@ -21,6 +21,7 @@
 #include "cmsis_os.h"
 #include "console.h"
 #include "firmware_configuration.hpp"
+#include "pdoa_output.hpp"
 #include "sys_node.h"
 #include "task.h"
 #include "uwb_manager.hpp"
@@ -121,6 +122,9 @@ void drain_sensor_frames(UwbManager &manager) {
       sys_node_forward(UWB_SENSOR_PORT, &frame);
       continue;
     }
+    if (pdoa_output_on_frame(frame)) {
+      continue;
+    }
     if (frame.extended || frame.fd || frame.id < UWB_SENSOR_ID_FIRST ||
         frame.id > UWB_SENSOR_ID_LAST || frame.length < UWB_PACKET_SIZE) {
       ignored_frames++;
@@ -209,6 +213,19 @@ void print_health(UwbManager &manager) {
       static_cast<unsigned long>(output_bus.tx_failed),
       static_cast<unsigned>(output_bus.tx_error_count),
       static_cast<unsigned long>(output_bus.bus_off_events));
+  if (pdoa_output_enabled()) {
+    const PdoaOutputStats &pdoa = pdoa_output_stats();
+    console_printf(
+        "pdoa 0x244 | if0 obs=%lu cal=%lu | sent=%lu refused=%lu | replaced=%lu expired=%lu aborted=%lu fd_refused=%lu%s\r\n",
+        static_cast<unsigned long>(pdoa.observation_frames),
+        static_cast<unsigned long>(pdoa.calibration_frames),
+        static_cast<unsigned long>(pdoa.sent), static_cast<unsigned long>(pdoa.refused),
+        static_cast<unsigned long>(output_bus.latest_replaced),
+        static_cast<unsigned long>(output_bus.latest_expired),
+        static_cast<unsigned long>(output_bus.latest_aborted),
+        static_cast<unsigned long>(output_bus.fd_refused),
+        pdoa_output_suppresses_legacy() ? " (pdoa only)" : "");
+  }
 }
 
 void uwb_task(void *argument) {
@@ -221,10 +238,15 @@ void uwb_task(void *argument) {
 
   manager.init();
   (void)manager.start();
+  pdoa_output_init(xTaskGetTickCount());
 
   for (;;) {
     vTaskDelayUntil(&wake_time, pdMS_TO_TICKS(UWB_POLL_PERIOD_MS));
     drain_sensor_frames(manager);
+    // Before the 190 ms branch below: 0x244 has its own 40 ms tick.
+#if BOARD_CAN2_ENABLE
+    pdoa_output_poll(xTaskGetTickCount());
+#endif
 
     polls++;
     if (polls < UWB_POLLS_PER_UPDATE) {

@@ -209,6 +209,9 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     App/configuration/firmware_metadata.cpp
     App/uwb_task.cpp
     App/uwb_output.cpp
+    App/pdoa_output.cpp
+    App/pdoa/pdoa_result.cpp
+    App/pdoa/pdoa_publisher.cpp
     # IF-5 common messages (heartbeat, CFG READ, ESTOP observation)
     App/sys_node.cpp
     App/protocol/if5_codec.cpp
@@ -240,6 +243,7 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     App/configuration
     App/drivers
     App/manager/uwb
+    App/pdoa
     App/protocol
     App/tests
 )
