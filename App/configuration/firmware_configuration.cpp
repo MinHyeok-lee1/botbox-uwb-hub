@@ -57,6 +57,9 @@ const FirmwareConfigurationPayload DEFAULT_CONFIGURATION = {
     100.0f, // initial_turn_ratio_percent
     1U,     // back_uwb_enabled
     0.4f    // vector_smoothing_alpha
+},
+{
+    PDOA_OUTPUT_LEGACY_ONLY // output_mode
 }};
 
 const FirmwareConfigurationPayload *active_configuration =
@@ -124,9 +127,11 @@ bool valid_tuning_ranges(const UwbFollowConfiguration &configuration) {
   return true;
 }
 
-bool valid_values(const FirmwareConfigurationPayload &payload) {
-  const UwbFollowConfiguration &configuration = payload.uwb_follow;
+bool valid_pdoa_values(const PdoaFollowConfiguration &configuration) {
+  return configuration.output_mode <= PDOA_OUTPUT_PDOA_ONLY;
+}
 
+bool valid_uwb_values(const UwbFollowConfiguration &configuration) {
   return configuration.receive_timeout_ms > 0U &&
          configuration.receive_timeout_ms <= MAX_RECEIVE_TIMEOUT_MS &&
          configuration.distance_filter_enabled <= 1U &&
@@ -183,6 +188,23 @@ bool valid_values(const FirmwareConfigurationPayload &payload) {
          configuration.vector_smoothing_alpha <= 1.0f;
 }
 
+bool valid_values(const FirmwareConfigurationPayload &payload) {
+  return valid_uwb_values(payload.uwb_follow) &&
+         valid_pdoa_values(payload.pdoa_follow);
+}
+
+// Expected payload length for a schema this firmware can decode, or 0 when the
+// schema has no decoder.
+uint32_t decodable_payload_length(uint16_t schema_version) {
+  if (schema_version == CONFIGURATION_SCHEMA_VERSION) {
+    return sizeof(FirmwareConfigurationPayload);
+  }
+  if (schema_version == LEGACY_SCHEMA_1) {
+    return sizeof(FirmwareConfigurationPayloadSchema1);
+  }
+  return 0U;
+}
+
 } // namespace
 
 ConfigurationLoadStatus initialize_firmware_configuration() {
@@ -198,29 +220,44 @@ ConfigurationLoadStatus initialize_firmware_configuration() {
 
   if (image->header.magic != CONFIGURATION_MAGIC ||
       image->header.binary_format_version !=
-          CONFIGURATION_BINARY_FORMAT_VERSION ||
-      image->header.configuration_schema_version !=
-          CONFIGURATION_SCHEMA_VERSION ||
-      image->header.payload_length != sizeof(FirmwareConfigurationPayload)) {
+          CONFIGURATION_BINARY_FORMAT_VERSION) {
     load_status = ConfigurationLoadStatus::INVALID_HEADER;
     return load_status;
   }
 
+  const uint16_t schema_version = image->header.configuration_schema_version;
+  const uint32_t expected_length = decodable_payload_length(schema_version);
+  if (expected_length == 0U || image->header.payload_length != expected_length) {
+    load_status = ConfigurationLoadStatus::INVALID_HEADER;
+    return load_status;
+  }
+
+  // The checksum covers the payload length of the stored schema, not the
+  // current layout.
   const uint32_t calculated_crc = crc32(
-      reinterpret_cast<const uint8_t *>(&image->payload),
-      sizeof(image->payload));
+      reinterpret_cast<const uint8_t *>(&image->payload), expected_length);
   if (calculated_crc != image->header.payload_checksum) {
     load_status = ConfigurationLoadStatus::CRC_MISMATCH;
     return load_status;
   }
 
-  if (!valid_values(image->payload)) {
+  const bool migrated = schema_version == LEGACY_SCHEMA_1;
+  if (migrated) {
+    // Schema 1 holds uwb_follow only, at the same offset as in the current
+    // layout. Keep it and default the sections added later. The bytes past the
+    // stored payload were copied from erased flash and are overwritten here.
+    loaded_configuration.payload.pdoa_follow =
+        DEFAULT_CONFIGURATION.pdoa_follow;
+  }
+
+  if (!valid_values(loaded_configuration.payload)) {
     load_status = ConfigurationLoadStatus::INVALID_VALUES;
     return load_status;
   }
 
   active_configuration = &loaded_configuration.payload;
-  load_status = ConfigurationLoadStatus::LOADED_FROM_FLASH;
+  load_status = migrated ? ConfigurationLoadStatus::LOADED_MIGRATED_FROM_SCHEMA_1
+                         : ConfigurationLoadStatus::LOADED_FROM_FLASH;
   return load_status;
 }
 
@@ -237,6 +274,8 @@ const char *firmware_configuration_status_string() {
     return "not initialized";
   case ConfigurationLoadStatus::LOADED_FROM_FLASH:
     return "loaded from flash";
+  case ConfigurationLoadStatus::LOADED_MIGRATED_FROM_SCHEMA_1:
+    return "loaded from flash (schema 1 migrated; pdoa_follow defaulted)";
   case ConfigurationLoadStatus::EMPTY_FLASH:
     return "empty flash; using defaults";
   case ConfigurationLoadStatus::INVALID_HEADER:

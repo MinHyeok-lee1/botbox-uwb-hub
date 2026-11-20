@@ -21,23 +21,39 @@ static constexpr uint16_t CONFIGURATION_BINARY_FORMAT_VERSION =
 static constexpr uint16_t CONFIGURATION_SCHEMA_VERSION =
     botbox::compatibility::CURRENT_CONFIGURATION_SCHEMA_VERSION;
 
-// The current loader decodes one packed payload layout. Keep the advertised
-// range exact until version-specific legacy decoders/migrations are added.
+// Oldest configuration schema that has an in-memory decoder in
+// firmware_configuration.cpp (schema 1 is migrated to the current layout).
+// Raise the manifest minimum only down to this value; lowering it further needs
+// a new decoder and a new value here.
+static constexpr uint16_t OLDEST_DECODABLE_CONFIGURATION_SCHEMA_VERSION = 1U;
+
+// The loader decodes one binary format. Keep that range exact until
+// version-specific binary-format decoders are added.
 static_assert(
     botbox::compatibility::
             MINIMUM_SUPPORTED_CONFIGURATION_BINARY_FORMAT_VERSION ==
         CONFIGURATION_BINARY_FORMAT_VERSION,
     "Add legacy binary-format decoders before widening compatibility");
+// Every schema the manifest advertises must have a decoder.
 static_assert(
-    botbox::compatibility::MINIMUM_SUPPORTED_CONFIGURATION_SCHEMA_VERSION ==
-        CONFIGURATION_SCHEMA_VERSION,
+    botbox::compatibility::MINIMUM_SUPPORTED_CONFIGURATION_SCHEMA_VERSION >=
+        OLDEST_DECODABLE_CONFIGURATION_SCHEMA_VERSION,
     "Add legacy configuration-schema decoders before widening compatibility");
+static_assert(
+    OLDEST_DECODABLE_CONFIGURATION_SCHEMA_VERSION <=
+        CONFIGURATION_SCHEMA_VERSION,
+    "Oldest decodable schema cannot exceed the current schema");
 
 // These are storage capacities. The active sizes come from configuration.
 static constexpr uint32_t UWB_MODE_DECISION_BUFFER_CAPACITY = 16U;
 // Longest wait, in task cycles, before a direct FORWARD <-> BACKWARD change is
 // accepted.
 static constexpr uint32_t UWB_DIRECTION_FLIP_CONFIRM_MAX = 16U;
+
+// PdoaFollowConfiguration::output_mode values: which CAN2 results are sent.
+static constexpr uint32_t PDOA_OUTPUT_LEGACY_ONLY = 0U; // 0x240/0x241 only
+static constexpr uint32_t PDOA_OUTPUT_BOTH = 1U;        // 0x240/0x241 + 0x244
+static constexpr uint32_t PDOA_OUTPUT_PDOA_ONLY = 2U;   // 0x244 only
 
 // Period of the task that calls UwbManager::update(). The mode decision buffer
 // takes one sample per cycle, so the validation of
@@ -79,7 +95,18 @@ struct UwbFollowConfiguration {
   float vector_smoothing_alpha;
 };
 
+struct PdoaFollowConfiguration {
+  uint32_t output_mode; // PDOA_OUTPUT_*
+};
+
 struct FirmwareConfigurationPayload {
+  UwbFollowConfiguration uwb_follow;
+  PdoaFollowConfiguration pdoa_follow;
+};
+
+// Schema 1 payload: the uwb_follow section only. Used to migrate old images.
+static constexpr uint16_t LEGACY_SCHEMA_1 = 1U;
+struct FirmwareConfigurationPayloadSchema1 {
   UwbFollowConfiguration uwb_follow;
 };
 
@@ -106,9 +133,15 @@ static_assert(offsetof(UwbFollowConfiguration, center_in_threshold_lr_mm) == 24U
               "UWB uint32 alignment no longer matches packed BXUH payload");
 static_assert(sizeof(UwbFollowConfiguration) == 108U,
               "UWB configuration ABI changed");
-static_assert(sizeof(FirmwareConfigurationPayload) == 108U,
+static_assert(sizeof(PdoaFollowConfiguration) == 4U,
+              "PDoA configuration ABI changed");
+static_assert(sizeof(FirmwareConfigurationPayloadSchema1) == 108U,
+              "Schema 1 payload ABI changed");
+static_assert(offsetof(FirmwareConfigurationPayload, pdoa_follow) == 108U,
+              "PDoA section must follow uwb_follow");
+static_assert(sizeof(FirmwareConfigurationPayload) == 112U,
               "Configuration payload ABI changed");
-static_assert(sizeof(FirmwareConfigurationImage) == 124U,
+static_assert(sizeof(FirmwareConfigurationImage) == 128U,
               "Configuration image ABI changed");
 static_assert(sizeof(FirmwareConfigurationImage) <= CONFIGURATION_FLASH_SIZE,
               "Configuration does not fit in the reserved flash area");
@@ -116,6 +149,7 @@ static_assert(sizeof(FirmwareConfigurationImage) <= CONFIGURATION_FLASH_SIZE,
 enum class ConfigurationLoadStatus : uint8_t {
   NOT_INITIALIZED,
   LOADED_FROM_FLASH,
+  LOADED_MIGRATED_FROM_SCHEMA_1, // valid schema 1 image; pdoa_follow defaulted
   EMPTY_FLASH,
   INVALID_HEADER,
   CRC_MISMATCH,

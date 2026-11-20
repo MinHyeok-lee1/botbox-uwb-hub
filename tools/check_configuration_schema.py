@@ -25,6 +25,7 @@ def read(path: Path) -> str:
 
 STRUCT_GROUPS = (
     ("uwb_follow", "UwbFollowConfiguration", "UWB_FIELDS"),
+    ("pdoa_follow", "PdoaFollowConfiguration", "PDOA_FIELDS"),
 )
 
 
@@ -268,6 +269,26 @@ def validate_form_schema(
                     f"configuration.schema.json default is above maximum for {path}"
                 )
 
+    expected_groups = [group_name for group_name, _, _ in STRUCT_GROUPS]
+    actual_groups = [item.get("key") for item in groups]
+    if actual_groups != expected_groups:
+        errors.append(
+            "configuration.schema.json groups do not match the firmware structs: "
+            f"expected {expected_groups}, got {actual_groups}"
+        )
+
+    # binary_order is the index in the packed payload across all groups.
+    binary_index = 0
+    for group in groups:
+        for field in group.get("fields", []):
+            if field.get("binary_order") != binary_index:
+                errors.append(
+                    "configuration.schema.json binary_order mismatch for "
+                    f"{group.get('key')}.{field.get('key')}: expected "
+                    f"{binary_index}, got {field.get('binary_order')}"
+                )
+            binary_index += 1
+
     for index, rule in enumerate(schema.get("rules", [])):
         if not isinstance(rule.get("user_message"), str) or not rule["user_message"]:
             errors.append(
@@ -364,6 +385,34 @@ def validate_binary_format(
         errors.append(
             "generator payload size does not match configuration.schema.json"
         )
+    if (
+        compatibility["firmware"]["configuration"]["schema"]["minimum_supported"]
+        < extract_cpp_constant(
+            header_text, "OLDEST_DECODABLE_CONFIGURATION_SCHEMA_VERSION"
+        )
+    ):
+        errors.append("manifest minimum schema is older than the firmware decoders")
+    for old_version in range(
+        compatibility["firmware"]["configuration"]["schema"]["minimum_supported"],
+        schema_version,
+    ):
+        old_path = ROOT / f"configuration/schemas/v{old_version}/configuration.schema.json"
+        if not old_path.is_file():
+            errors.append(f"earlier schema file is missing: {old_path.relative_to(ROOT)}")
+        elif json.loads(read(old_path)).get("configuration_schema_version") != old_version:
+            errors.append(f"{old_path.relative_to(ROOT)} has the wrong schema version")
+    pdoa_modes = [
+        extract_cpp_constant(header_text, name)
+        for name in (
+            "PDOA_OUTPUT_LEGACY_ONLY",
+            "PDOA_OUTPUT_BOTH",
+            "PDOA_OUTPUT_PDOA_ONLY",
+        )
+    ]
+    if pdoa_modes != list(range(len(pdoa_modes))):
+        errors.append("PDOA_OUTPUT_* constants must be consecutive from 0")
+    if extract_python_constant(generator_text, "PDOA_OUTPUT_MODE_MAX") != max(pdoa_modes):
+        errors.append("generator PDOA_OUTPUT_MODE_MAX does not match the firmware")
     expected_crc = int(binary_format["checksum"]["validation"]["expected"], 16)
     if zlib.crc32(b"123456789") & 0xFFFFFFFF != expected_crc:
         errors.append("CRC-32/ISO-HDLC validation vector does not match")

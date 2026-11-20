@@ -20,7 +20,7 @@ sha256 lock (`vendor/firmware-contracts/uwb-hub/` in the uploader).
 | File | Content |
 |---|---|
 | `configuration/configuration.schema.json` | Current configuration schema (`schema_id` `botbox.uwb_hub.configuration`, magic `BXUH`) |
-| `configuration/schemas/vN/configuration.schema.json` | Earlier schemas the uploader can still write (none yet) |
+| `configuration/schemas/vN/configuration.schema.json` | Earlier schemas the uploader can still write (`v1`) |
 | `compatibility/schema-compatibility.json` | Compatibility manifest (firmware ranges, uploader section) |
 | `CMakeLists.txt` | Read only for `project(... VERSION X.Y.Z)` |
 
@@ -34,7 +34,7 @@ change.
 | MCU | STM32G474RET6, device id `0x469`, 512 KiB | uploader board profile `uwb-hub` |
 | Firmware region | `0x08000000`-`0x0807F000` (linker `FLASH` 508K) | `STM32G474xx_FLASH.ld` |
 | Firmware metadata | 32 bytes at `0x08000200`, magic `BUFW` | `App/configuration/firmware_metadata.cpp` |
-| Configuration | 16-byte header + 108-byte payload at `0x0807F000` (linker `CONFIG` 4K), magic `BXUH` | `App/configuration/firmware_configuration.hpp` |
+| Configuration | 16-byte header + 112-byte payload (schema 2; schema 1 was 108) at `0x0807F000` (linker `CONFIG` 4K), magic `BXUH` | `App/configuration/firmware_configuration.hpp` |
 | Flash banks | DBANK=1 (dual bank, factory default) required by the uploader; DBANK=0 is refused | option bytes |
 
 The build checks the embedded metadata against `project(VERSION)` and the
@@ -49,8 +49,14 @@ How the uploader handles this board:
 - The configuration image it builds is byte-identical to
   `tools/generate_configuration.py` output for the same values (checked by an
   uploader test against `configuration/default.json`).
+- Schema 2 (2026-11-20) appends the `pdoa_follow` group (`output_mode`
+  0 legacy only / 1 both / 2 PDoA only, default 0): payload 112 bytes, image
+  128 bytes, binary format still 1. The firmware accepts a valid schema 1
+  image (108-byte payload) and migrates it in memory (`pdoa_follow` defaulted,
+  status "schema 1 migrated" on the console); it never rewrites the flash. The
+  uploader may keep writing schema 1 (`schemas/v1/`) to firmware that reads it.
 - It applies `mode_observation_timeout_ms >= (mode_decision_buffer_size - 1) x 190 ms`
-  from schema 1, as this firmware does.
+  from schema 1 and 2, as this firmware does.
 - Uploads were verified on hardware (2026-11-18, DBANK=1, CubeProgrammer
   2.23): full install, and a firmware-only update keeps CONFIG. The hub does
   not use DBANK=0, so the uploader refuses it rather than leave it untested.
@@ -64,12 +70,20 @@ Keep these in sync, then run `python3 tools/check_configuration_schema.py`:
 2. `tools/generate_configuration.py`, `configuration/default.json`.
 3. `configuration/configuration.schema.json`.
 4. `compatibility/schema-compatibility.json`.
+5. `tools/configure_configuration.py` (uses the generator tables) and, for the
+   multi-group layout, `STRUCT_GROUPS` in `tools/check_configuration_schema.py`.
 
 When the payload layout changes, bump `configuration_schema_version` (and the
 binary format only if the header changes). Copy the previous schema to
 `configuration/schemas/v<old>/configuration.schema.json` if the uploader must
 still write it, and update both version ranges in the manifest. The rules are
 the same as for the control board (`botbox-stm32` `docs/schema_compatibility.md`).
+Widening the firmware minimum below the current schema needs a decoder in
+`firmware_configuration.cpp` and a raised
+`OLDEST_DECODABLE_CONFIGURATION_SCHEMA_VERSION` (a `static_assert` enforces it);
+`tests/host/run_configuration_tests.sh` covers the schema 1 migration. The
+firmware version (`project(VERSION)`) is bumped for a release, not by the
+schema change itself; the uploader reads the schema ranges from the manifest.
 
 ## Tags
 

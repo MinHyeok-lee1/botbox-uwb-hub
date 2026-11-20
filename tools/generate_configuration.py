@@ -11,7 +11,8 @@ from pathlib import Path
 
 MAGIC = b"BXUH"
 BINARY_FORMAT_VERSION = 1
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+PDOA_OUTPUT_MODE_MAX = 2  # 0 legacy only, 1 both, 2 PDoA only
 HEADER_FORMAT = "<4sHHII"
 HEADER_SIZE = struct.calcsize(HEADER_FORMAT)
 FLASH_ADDRESS = 0x0807F000
@@ -59,8 +60,13 @@ UWB_FIELDS = (
     ("vector_smoothing_alpha", "f"),
 )
 
+PDOA_FIELDS = (
+    ("output_mode", "I"),
+)
+
 CONFIGURATION_GROUP_FIELDS = (
     ("uwb_follow", UWB_FIELDS),
+    ("pdoa_follow", PDOA_FIELDS),
 )
 
 PAYLOAD_FORMAT = "<" + "".join(
@@ -240,6 +246,16 @@ def validate_uwb(configuration: dict) -> None:
     )
 
 
+def validate_pdoa(configuration: dict) -> None:
+    mode = configuration["output_mode"]
+    _require(
+        isinstance(mode, int)
+        and not isinstance(mode, bool)
+        and 0 <= mode <= PDOA_OUTPUT_MODE_MAX,
+        f"output_mode must be an integer 0..{PDOA_OUTPUT_MODE_MAX}",
+    )
+
+
 def validate(document: dict) -> None:
     _require(isinstance(document, dict), "configuration document must be an object")
     _require(
@@ -257,6 +273,7 @@ def validate(document: dict) -> None:
         _validate_group_fields(group_name, document.get(group_name), fields)
 
     validate_uwb(document["uwb_follow"])
+    validate_pdoa(document["pdoa_follow"])
 
 
 def build_image(document: dict) -> bytes:

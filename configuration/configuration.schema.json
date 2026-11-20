@@ -1,7 +1,7 @@
 {
   "schema_id": "botbox.uwb_hub.configuration",
   "metadata_version": 1,
-  "configuration_schema_version": 1,
+  "configuration_schema_version": 2,
   "default_profiles": {
     "default_profile": "default",
     "profiles": [
@@ -565,6 +565,30 @@
           "required": true,
           "description": "CAN2로 보내는 태그 위치 벡터(거리와 방향각)를 계산할 때, 새로 계산한 태그 위치를 기존 위치에 얼마나 반영할지 정합니다. 앞뒤·좌우 위치 성분에 적용하며 1이면 평활하지 않습니다. 장점: 값을 낮추면 거리값 오차로 방향각이 흔들리는 현상이 줄어듭니다. 주의: 값을 낮출수록 위치 변화가 늦게 반영됩니다(0.4에서 약 0.3초 지연).",
           "user_description": "구동부로 보내는 사용자 위치 정보가 새 측정값에 얼마나 빠르게 반응할지 정합니다. 값을 높이면 빠르게 반응하고, 낮추면 부드럽지만 반응이 느려집니다."
+        }
+      ]
+    },
+    {
+      "key": "pdoa_follow",
+      "label": "PDoA 추종 설정",
+      "user_label": "PDoA 출력 설정",
+      "description": "PDoA 단일 센서 추종 결과(CAN2 0x244)의 출력 방식을 선택합니다.",
+      "user_description": "PDoA 추종 결과를 외부로 내보낼지, 기존 UWB 결과(0x240/0x241)와 함께 내보낼지 선택합니다.",
+      "fields": [
+        {
+          "key": "output_mode",
+          "binary_order": 28,
+          "label": "PDoA 0x244 출력 모드",
+          "user_label": "PDoA 출력 방식",
+          "type": "integer",
+          "storage_type": "uint32",
+          "default": 0,
+          "minimum": 0,
+          "maximum": 2,
+          "editable": true,
+          "required": true,
+          "description": "CAN2 출력 선택. 0=LEGACY_ONLY: 기존 UWB_RESULT 0x240/0x241만 송신(기본). 1=BOTH: 0x240/0x241과 PDoA 0x244를 함께 송신. 2=PDOA_ONLY: 0x244만 송신하고 0x240/0x241은 송신하지 않습니다. 2보다 큰 값은 잘못된 값입니다.",
+          "user_description": "0은 기존 방식만, 1은 기존 방식과 PDoA 결과를 함께, 2는 PDoA 결과만 내보냅니다. PDoA 전용(2)에서는 기존 거리 결과가 나가지 않으므로 제어 보드가 PDoA를 지원할 때만 사용하세요."
         }
       ]
     }
