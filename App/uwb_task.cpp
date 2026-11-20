@@ -215,11 +215,27 @@ void print_health(UwbManager &manager) {
       static_cast<unsigned long>(output_bus.bus_off_events));
   if (pdoa_output_enabled()) {
     const PdoaOutputStats &pdoa = pdoa_output_stats();
+    const pdoa::PipelineStats &pipe = pdoa_output_pipeline_stats();
+    constexpr uint32_t CYCLES_PER_US = 170U;
     console_printf(
-        "pdoa 0x244 | if0 obs=%lu cal=%lu | sent=%lu refused=%lu | replaced=%lu expired=%lu aborted=%lu fd_refused=%lu%s\r\n",
-        static_cast<unsigned long>(pdoa.observation_frames),
-        static_cast<unsigned long>(pdoa.calibration_frames),
+        "pdoa if0 | obs=%lu cal=%lu bad=%lu | acc=%lu dup=%lu late=%lu miss=%lu noage=%lu nocenter=%lu core_ref=%lu | core %s max=%luus last=%luus\r\n",
+        static_cast<unsigned long>(pdoa.obs_frames), static_cast<unsigned long>(pdoa.cal_frames),
+        static_cast<unsigned long>(pdoa.bad_frames),
+        static_cast<unsigned long>(pipe.obs_accepted),
+        static_cast<unsigned long>(pipe.obs_duplicate), static_cast<unsigned long>(pipe.obs_late),
+        static_cast<unsigned long>(pipe.obs_missing), static_cast<unsigned long>(pipe.obs_no_rf_time),
+        static_cast<unsigned long>(pipe.obs_without_center),
+        static_cast<unsigned long>(pipe.obs_core_refused + pipe.range_core_refused),
+        pdoa.core_ready ? "ok" : "INIT FAILED",
+        static_cast<unsigned long>(pdoa.core_cycles_max / CYCLES_PER_US),
+        static_cast<unsigned long>(pdoa.core_cycles_last / CYCLES_PER_US));
+    console_printf(
+        "pdoa 0x244 | sent=%lu refused=%lu restarts=%lu (cal=%lu boot=%lu silence=%lu sn=%lu) | replaced=%lu expired=%lu aborted=%lu fd_refused=%lu%s\r\n",
         static_cast<unsigned long>(pdoa.sent), static_cast<unsigned long>(pdoa.refused),
+        static_cast<unsigned long>(pdoa.restarts), static_cast<unsigned long>(pipe.restarts_cal),
+        static_cast<unsigned long>(pipe.restarts_boot_id),
+        static_cast<unsigned long>(pipe.restarts_silence),
+        static_cast<unsigned long>(pipe.restarts_regression),
         static_cast<unsigned long>(output_bus.latest_replaced),
         static_cast<unsigned long>(output_bus.latest_expired),
         static_cast<unsigned long>(output_bus.latest_aborted),

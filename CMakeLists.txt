@@ -212,6 +212,12 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     App/pdoa_output.cpp
     App/pdoa/pdoa_result.cpp
     App/pdoa/pdoa_publisher.cpp
+    App/pdoa/pdoa_if0.cpp
+    App/pdoa/pdoa_pipeline.cpp
+    # E2 Core (vendored unchanged, see App/third_party/uwb_core/VENDOR.md)
+    App/third_party/uwb_core/uwb_core.c
+    App/third_party/uwb_core/uwb_math.c
+    App/third_party/uwb_core/uwb_engines.c
     # IF-5 common messages (heartbeat, CFG READ, ESTOP observation)
     App/sys_node.cpp
     App/protocol/if5_codec.cpp
@@ -244,6 +250,7 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     App/drivers
     App/manager/uwb
     App/pdoa
+    App/third_party/uwb_core
     App/protocol
     App/tests
 )
@@ -261,12 +268,23 @@ target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
     UWB_HUB_RESULT_B_ENABLE=$<BOOL:${UWB_HUB_RESULT_B_ENABLE}>
 )
 
+# The E2 Core needs strict IEEE double math and only its V3 profile
+# (App/third_party/uwb_core/INTEGRATION.md).
+set_source_files_properties(
+    App/third_party/uwb_core/uwb_core.c
+    App/third_party/uwb_core/uwb_math.c
+    App/third_party/uwb_core/uwb_engines.c
+    PROPERTIES
+        COMPILE_DEFINITIONS "UWB_V3_ONLY=1"
+        COMPILE_OPTIONS "-std=c11;-ffp-contract=off;-fno-fast-math")
+
 # Remove wrong libob.a library dependency when using cpp files
 list(REMOVE_ITEM CMAKE_C_IMPLICIT_LINK_LIBRARIES ob)
 
 # Add linked libraries
 target_link_libraries(${CMAKE_PROJECT_NAME}
     stm32cubemx
+    m
 
     # Add user defined libraries
 )
